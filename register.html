@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Register — Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css">
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="crest-field text-white py-12">
+  <div class="shell">
+    <h1 class="display text-[clamp(2rem,5vw,3.4rem)]">Player registration</h1>
+    <p class="lede text-white/80 mt-3" data-cms="register.intro">
+      Pick your division, fill in the form, then pay through the secure Stripe link.
+    </p>
+  </div>
+</section>
+
+<section class="shell py-12 grid lg:grid-cols-[1.4fr,1fr] gap-12 items-start">
+
+  <!-- ── Form ─────────────────────────────────────────────────── -->
+  <form id="reg-form" class="panel p-6 md:p-8 grid gap-5">
+    <div class="rule">Your details</div>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div><label class="label" for="first_name">First name</label><input id="first_name" name="first_name" class="field" required></div>
+      <div><label class="label" for="last_name">Last name</label><input id="last_name" name="last_name" class="field" required></div>
+      <div><label class="label" for="email">Email</label><input id="email" name="email" type="email" class="field" required></div>
+      <div><label class="label" for="phone">Mobile</label><input id="phone" name="phone" type="tel" class="field"></div>
+    </div>
+
+    <div class="rule mt-2">On the ice</div>
+    <div class="grid sm:grid-cols-3 gap-4">
+      <div><label class="label" for="position">Position</label>
+        <select id="position" name="position" class="field">
+          <option>Forward</option><option>Defence</option><option>Goalie</option>
+        </select></div>
+      <div><label class="label" for="jersey_number">Preferred number</label>
+        <input id="jersey_number" name="jersey_number" type="number" min="1" max="99" class="field"></div>
+      <div><label class="label" for="shirt_size">Jersey size</label>
+        <select id="shirt_size" name="shirt_size" class="field">
+          <option>S</option><option>M</option><option selected>L</option><option>XL</option><option>XXL</option>
+        </select></div>
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div><label class="label" for="division">Division</label>
+        <select id="division" name="division" class="field" required><option value="">Choose a division</option></select></div>
+      <div><label class="label" for="team_id">Team</label>
+        <select id="team_id" name="team_id" class="field">
+          <option value="">Place me wherever there's room</option>
+        </select></div>
+    </div>
+
+    <div class="rule mt-2">In case of trouble</div>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div><label class="label" for="emergency_name">Emergency contact</label><input id="emergency_name" name="emergency_name" class="field" required></div>
+      <div><label class="label" for="emergency_phone">Their phone</label><input id="emergency_phone" name="emergency_phone" type="tel" class="field" required></div>
+    </div>
+
+    <div><label class="label" for="notes">Anything we should know?</label>
+      <textarea id="notes" name="notes" rows="3" class="field" placeholder="Playing with a friend, goalie gear, allergies…"></textarea></div>
+
+    <label class="flex gap-3 items-start text-sm text-[#33463C]">
+      <input type="checkbox" id="waiver" required class="mt-1">
+      <span>I have read and accept the league waiver and code of conduct, and I confirm I am 18 or older.</span>
+    </label>
+
+    <div class="flex flex-wrap items-center gap-4 pt-2 border-t" style="border-color:var(--line)">
+      <button class="btn btn-primary" id="submit-btn">Save my details</button>
+      <p class="text-xs text-gray-500">Payment comes next — nothing is charged on this page.</p>
+    </div>
+    <p id="form-msg" class="text-sm hidden"></p>
+  </form>
+
+  <!-- ── Payment column ───────────────────────────────────────── -->
+  <aside class="grid gap-4 lg:sticky lg:top-6">
+    <div class="rule">Fees &amp; payment</div>
+    <div id="pay-links" class="grid gap-3"></div>
+    <div class="panel-deep p-5">
+      <p class="display text-lg mb-2">How it works</p>
+      <ol class="text-sm text-white/80 grid gap-2 list-decimal pl-4 serif">
+        <li>Save your details above.</li>
+        <li>Pay through the Stripe link for your division.</li>
+        <li>We confirm payment and your name appears on the <a href="teams.html" class="underline">roster</a>.</li>
+      </ol>
+    </div>
+  </aside>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/conrad.js"></script>
+<script>
+document.addEventListener('ivy:ready', async () => {
+  const { esc } = window.Ivy;
+
+  /* Divisions and teams straight from the database. */
+  const { data: teams } = await sb.from('teams').select('id,name,division,roster_cap').order('name');
+  const divisions = [...new Set((teams || []).map(t => t.division))];
+  document.getElementById('division').insertAdjacentHTML('beforeend',
+    divisions.map(d => `<option>${esc(d)}</option>`).join(''));
+
+  const teamSel = document.getElementById('team_id');
+  function fillTeams() {
+    const d = document.getElementById('division').value;
+    const list = (teams || []).filter(t => !d || t.division === d);
+    teamSel.innerHTML = `<option value="">Place me wherever there's room</option>` +
+      list.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  }
+  document.getElementById('division').addEventListener('change', fillTeams);
+  fillTeams();
+
+  /* Stripe links, editable in the admin portal. */
+  const { data: links } = await sb.from('payment_links').select('*').eq('active', true).order('sort');
+  document.getElementById('pay-links').innerHTML = (links || []).length
+    ? links.map(l => `
+      <div class="panel p-5">
+        <p class="display text-lg">${esc(l.label)}</p>
+        ${l.price_text ? `<p class="scoreline text-2xl mt-1" style="color:var(--ivy)">${esc(l.price_text)}</p>` : ''}
+        ${l.description ? `<p class="serif text-sm text-[#33463C] mt-2">${esc(l.description)}</p>` : ''}
+        <a href="${esc(l.url)}" target="_blank" rel="noopener" class="btn btn-brass w-full mt-4">Pay with Stripe</a>
+      </div>`).join('')
+    : `<div class="panel p-5"><p class="text-sm text-gray-600">Payment links go live when registration opens. Save your details and we will email you.</p></div>`;
+
+  /* Submit */
+  document.getElementById('reg-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    const msg = document.getElementById('form-msg');
+    btn.disabled = true; btn.textContent = 'Saving…';
+
+    const f = new FormData(e.target);
+    const row = Object.fromEntries(f.entries());
+    row.jersey_number = row.jersey_number ? parseInt(row.jersey_number, 10) : null;
+    row.team_id = row.team_id || null;
+    row.waiver_accepted = document.getElementById('waiver').checked;
+
+    const { error } = await sb.from('registrations').insert(row);
+    msg.classList.remove('hidden');
+
+    if (error) {
+      msg.className = 'text-sm text-red-700';
+      msg.textContent = 'That did not save. Check your email address and try again, or email ' + window.IVY_CONFIG.CONTACT_EMAIL + '.';
+      btn.disabled = false; btn.textContent = 'Save my details';
+      return;
+    }
+
+    msg.className = 'text-sm font-semibold';
+    msg.style.color = 'var(--ivy)';
+    msg.textContent = 'Saved. Last step: pay through the Stripe link for your division on the right.';
+    btn.textContent = 'Details saved';
+    document.getElementById('pay-links').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+});
+</script>
+</body>
+</html>

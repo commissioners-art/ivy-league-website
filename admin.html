@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Staff portal — Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css">
+</head>
+<body class="bg-[var(--ice)]">
+
+<!-- ── Login ──────────────────────────────────────────────────── -->
+<section id="login" class="min-h-screen grid place-items-center px-4 crest-field">
+  <div class="w-full max-w-sm">
+    <div class="text-center text-white mb-8">
+      <img src="assets/img/logo.png" alt="" class="h-20 w-20 rounded-full mx-auto mb-4">
+      <h1 class="display text-2xl">Staff portal</h1>
+      <p class="text-sm text-white/65 mt-1">Scorekeeping and league administration</p>
+    </div>
+    <form id="login-form" class="panel p-6 grid gap-4">
+      <div><label class="label" for="li-email">Email</label><input id="li-email" type="email" class="field" required autocomplete="username"></div>
+      <div><label class="label" for="li-pass">Password</label><input id="li-pass" type="password" class="field" required autocomplete="current-password"></div>
+      <button class="btn btn-primary w-full">Sign in</button>
+      <p id="login-msg" class="text-sm text-red-700 hidden"></p>
+      <p class="text-xs text-gray-500">Accounts are created by a league admin. <a href="index.html" class="underline">Back to the site</a>.</p>
+    </form>
+  </div>
+</section>
+
+<!-- ── Portal ─────────────────────────────────────────────────── -->
+<div id="portal" class="hidden">
+  <header class="crest-field text-white">
+    <div class="shell flex items-center justify-between py-3">
+      <a href="index.html" class="flex items-center gap-3">
+        <img src="assets/img/logo.png" alt="" class="h-10 w-10 rounded-full">
+        <span class="display text-base leading-none">Staff portal</span>
+      </a>
+      <div class="flex items-center gap-3">
+        <span id="who" class="text-xs text-white/70"></span>
+        <button id="signout" class="btn btn-ghost !py-2 !px-3 !text-xs">Sign out</button>
+      </div>
+    </div>
+    <nav id="tabs" class="shell flex gap-1 overflow-x-auto pb-2"></nav>
+  </header>
+
+  <main class="shell py-8">
+    <div id="view"></div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script>
+  /* admin.js builds its own chrome, so app.js's header/footer are not used here. */
+  window.sb = window.supabase.createClient(IVY_CONFIG.SUPABASE_URL, IVY_CONFIG.SUPABASE_ANON_KEY);
+</script>
+<script src="assets/js/admin.js"></script>
+</body>
+</html>

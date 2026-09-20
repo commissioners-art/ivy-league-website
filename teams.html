@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teams &amp; rosters — Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css">
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="crest-field text-white py-12">
+  <div class="shell">
+    <h1 class="display text-[clamp(2rem,5vw,3.4rem)]">Teams &amp; rosters</h1>
+    <p class="lede text-white/80 mt-3">Rosters fill in automatically as registrations are confirmed. Stats update after every game.</p>
+  </div>
+</section>
+
+<section class="shell py-12">
+  <div id="teams" class="grid gap-8"></div>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/conrad.js"></script>
+<script>
+document.addEventListener('ivy:ready', async () => {
+  const { esc } = window.Ivy;
+
+  const [{ data: teams }, { data: stats }] = await Promise.all([
+    sb.from('teams').select('*').order('division').order('sort').order('name'),
+    sb.from('player_stats').select('*')
+  ]);
+
+  const statFor = id => (stats || []).find(s => s.player_id === id) || { goals: 0, assists: 0, points: 0, pim: 0 };
+  const el = document.getElementById('teams');
+
+  if (!teams?.length) { el.innerHTML = '<p class="text-sm text-gray-500">Teams for this season have not been posted yet.</p>'; return; }
+
+  const { data: players } = await sb.from('players').select('*').eq('status', 'active')
+    .order('jersey_number', { nullsFirst: false });
+
+  el.innerHTML = teams.map(t => {
+    const roster = (players || []).filter(p => p.team_id === t.id);
+    return `
+    <article id="${t.id}" class="panel overflow-hidden scroll-mt-24">
+      <header class="flex items-center gap-4 p-5" style="background:${esc(t.colour || '#09522B')}; color:#fff">
+        ${t.logo_url ? `<img src="${esc(t.logo_url)}" alt="" class="h-14 w-14 rounded-full bg-white/10 object-contain">` : ''}
+        <div>
+          <h2 class="display text-2xl">${esc(t.name)}</h2>
+          <p class="text-xs text-white/70 mt-1">${esc(t.division)} division · ${roster.length} skaters</p>
+        </div>
+      </header>
+      <div class="overflow-x-auto">
+        <table class="grid-table">
+          <thead><tr><th class="w-12">#</th><th>Player</th><th>Position</th>
+            <th class="text-right">G</th><th class="text-right">A</th><th class="text-right">P</th><th class="text-right">PIM</th></tr></thead>
+          <tbody>
+            ${roster.length ? roster.map(p => { const s = statFor(p.id); return `
+              <tr>
+                <td class="font-bold" style="color:var(--ivy)">${p.jersey_number ?? '—'}</td>
+                <td class="font-semibold">${esc(p.first_name)} ${esc(p.last_name)}</td>
+                <td class="text-gray-600">${esc(p.position)}</td>
+                <td class="text-right">${s.goals}</td><td class="text-right">${s.assists}</td>
+                <td class="text-right font-bold">${s.points}</td><td class="text-right">${s.pim}</td>
+              </tr>`; }).join('')
+            : `<tr><td colspan="7" class="text-sm text-gray-500">Roster spots open.
+                 <a href="register.html" class="font-semibold underline" style="color:var(--ivy)">Register for this team</a>.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </article>`;
+  }).join('');
+
+  if (location.hash) document.querySelector(location.hash)?.scrollIntoView({ behavior: 'smooth' });
+});
+</script>
+</body>
+</html>

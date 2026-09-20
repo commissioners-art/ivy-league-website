@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Standings — Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css">
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="crest-field text-white py-12">
+  <div class="shell">
+    <h1 class="display text-[clamp(2rem,5vw,3.4rem)]">Standings &amp; leaders</h1>
+    <p class="lede text-white/80 mt-3">Two points for a win, one for a tie. Recalculated from final scores as they land.</p>
+  </div>
+</section>
+
+<section class="shell py-12 grid gap-12">
+  <div id="tables"></div>
+
+  <div>
+    <div class="rule mb-6">Scoring leaders</div>
+    <div class="flex gap-2 mb-4" id="leader-tabs"></div>
+    <div class="panel overflow-x-auto">
+      <table class="grid-table">
+        <thead><tr>
+          <th>#</th><th>Player</th><th>Team</th><th>Pos</th>
+          <th class="text-right">G</th><th class="text-right">A</th><th class="text-right">P</th><th class="text-right">PIM</th>
+        </tr></thead>
+        <tbody id="leaders"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/conrad.js"></script>
+<script>
+document.addEventListener('ivy:ready', async () => {
+  const { esc } = window.Ivy;
+  let stats = [], division = '';
+
+  const { data: rows } = await sb.from('standings').select('*');
+  const byDiv = {};
+  (rows || []).forEach(r => (byDiv[r.division || 'League'] ||= []).push(r));
+
+  document.getElementById('tables').innerHTML = Object.entries(byDiv).map(([div, teams]) => {
+    teams.sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga));
+    return `
+      <div class="mb-10">
+        <div class="rule mb-4">${esc(div)} division</div>
+        <div class="panel overflow-x-auto">
+          <table class="grid-table">
+            <thead><tr><th>Team</th><th class="text-right">GP</th><th class="text-right">W</th><th class="text-right">L</th>
+              <th class="text-right">T</th><th class="text-right">GF</th><th class="text-right">GA</th>
+              <th class="text-right">Diff</th><th class="text-right">Pts</th></tr></thead>
+            <tbody>${teams.map(t => `
+              <tr>
+                <td class="font-semibold"><a href="teams.html#${t.team_id}" class="hover:underline">${esc(t.name)}</a></td>
+                <td class="text-right">${t.gp}</td><td class="text-right">${t.w}</td>
+                <td class="text-right">${t.l}</td><td class="text-right">${t.t}</td>
+                <td class="text-right">${t.gf}</td><td class="text-right">${t.ga}</td>
+                <td class="text-right">${t.gf - t.ga > 0 ? '+' : ''}${t.gf - t.ga}</td>
+                <td class="text-right font-bold" style="color:var(--ivy)">${t.pts}</td>
+              </tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('') || '<p class="text-sm text-gray-500">No results recorded yet.</p>';
+
+  const res = await sb.from('player_stats').select('*').order('points', { ascending: false });
+  stats = res.data || [];
+  const divisions = ['All', ...new Set(stats.map(s => s.division).filter(Boolean))];
+  document.getElementById('leader-tabs').innerHTML = divisions.map((d, i) =>
+    `<button class="btn ${i === 0 ? 'btn-primary' : 'btn-quiet'} !py-2 !px-4 !text-xs" data-div="${d === 'All' ? '' : esc(d)}">${esc(d)}</button>`).join('');
+
+  function drawLeaders() {
+    const list = stats.filter(s => !division || s.division === division).slice(0, 30);
+    document.getElementById('leaders').innerHTML = list.length ? list.map((p, i) => `
+      <tr>
+        <td class="text-gray-400">${i + 1}</td>
+        <td class="font-semibold">${esc(p.first_name)} ${esc(p.last_name)}</td>
+        <td class="text-gray-600">${esc(p.team_name ?? '—')}</td>
+        <td class="text-gray-600">${esc(p.position ?? '')}</td>
+        <td class="text-right">${p.goals}</td><td class="text-right">${p.assists}</td>
+        <td class="text-right font-bold">${p.points}</td><td class="text-right">${p.pim}</td>
+      </tr>`).join('') : '<tr><td colspan="8" class="text-sm text-gray-500">No scoring recorded yet.</td></tr>';
+  }
+
+  document.getElementById('leader-tabs').addEventListener('click', e => {
+    const b = e.target.closest('[data-div]'); if (!b) return;
+    division = b.dataset.div;
+    document.querySelectorAll('#leader-tabs button').forEach(x => { x.className = 'btn btn-quiet !py-2 !px-4 !text-xs'; });
+    b.className = 'btn btn-primary !py-2 !px-4 !text-xs';
+    drawLeaders();
+  });
+
+  drawLeaders();
+});
+</script>
+</body>
+</html>

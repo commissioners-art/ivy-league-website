@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milton Ivy League — Where pucks meet pints</title>
+<meta name="description" content="Adult recreational hockey in Milton, Ontario. Live scores, schedules, standings and registration for the Milton Ivy League.">
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css">
+</head>
+<body>
+<header id="site-header"></header>
+
+<!-- ── Hero: the scoreboard is the hero, not a stock photo ─────── -->
+<section class="crest-field text-white">
+  <div class="shell grid lg:grid-cols-[1.15fr,.85fr] gap-12 items-center py-16 lg:py-24">
+    <div>
+      <p class="rise text-sm text-white/70 mb-5" data-cms="hero.kicker">Season nine · Milton, Ontario</p>
+      <h1 class="rise rise-2 display text-[clamp(2.6rem,6.5vw,5rem)]" data-cms="hero.title">
+        Beer-league hockey, properly run.
+      </h1>
+      <p class="rise rise-3 lede text-white/85 mt-6" data-cms="hero.body">
+        Two divisions, real officials, a live scoreboard, and a pint waiting afterwards.
+      </p>
+      <div class="rise rise-3 flex flex-wrap gap-3 mt-9">
+        <a href="register.html" class="btn btn-brass">Register for 2026</a>
+        <a href="schedule.html" class="btn btn-ghost">See the schedule</a>
+      </div>
+    </div>
+
+    <!-- Live / next game card -->
+    <aside class="rise rise-3 bg-white/[.06] border border-white/15 rounded-md p-6" id="hero-game">
+      <p class="text-xs text-white/60">Loading the next fixture…</p>
+    </aside>
+  </div>
+</section>
+
+<!-- ── This week ───────────────────────────────────────────────── -->
+<section class="shell py-16">
+  <div class="rule mb-6">This week on the ice</div>
+  <div id="week-games" class="grid gap-3"></div>
+  <a href="schedule.html" class="btn btn-quiet mt-6">Full season schedule</a>
+</section>
+
+<!-- ── Leaders + about, side by side ───────────────────────────── -->
+<section class="shell grid lg:grid-cols-[1fr,1fr] gap-12 pb-4">
+  <div>
+    <div class="rule mb-6">Scoring leaders</div>
+    <div class="panel overflow-hidden">
+      <table class="grid-table">
+        <thead><tr><th>Player</th><th>Team</th><th class="text-right">G</th><th class="text-right">A</th><th class="text-right">P</th></tr></thead>
+        <tbody id="leaders"><tr><td colspan="5" class="text-sm text-gray-500">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="lg:pt-14">
+    <h2 class="display text-3xl mb-4" data-cms="about.title">Hockey for every level</h2>
+    <p class="lede text-[#33463C]" data-cms="about.body">
+      Whether you last played junior or last played in 2009, there is a division here that fits.
+    </p>
+    <div class="grid grid-cols-3 gap-6 mt-8 pt-8 border-t" style="border-color:var(--line)">
+      <div><p class="display text-4xl" style="color:var(--ivy)" id="stat-teams">—</p><p class="text-sm text-gray-600 mt-1">Teams</p></div>
+      <div><p class="display text-4xl" style="color:var(--ivy)" id="stat-players">—</p><p class="text-sm text-gray-600 mt-1">Players</p></div>
+      <div><p class="display text-4xl" style="color:var(--ivy)" id="stat-games">—</p><p class="text-sm text-gray-600 mt-1">Games played</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Announcements ───────────────────────────────────────────── -->
+<section class="shell py-16">
+  <div class="rule mb-6">From the league office</div>
+  <div id="news" class="grid md:grid-cols-3 gap-6"></div>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/conrad.js"></script>
+<script>
+document.addEventListener('ivy:ready', async () => {
+  const { fmtDate, fmtTime, esc, ordinal } = window.Ivy;
+  const sel = 'id, starts_at, venue, division, status, home_score, away_score, period, home:home_team_id(name, logo_url), away:away_team_id(name, logo_url)';
+
+  /* Hero: the live game if there is one, otherwise the next fixture. */
+  async function heroGame() {
+    let { data: live } = await sb.from('games').select(sel).eq('status', 'live').order('starts_at').limit(1);
+    let game = live?.[0];
+    if (!game) {
+      const { data } = await sb.from('games').select(sel)
+        .gte('starts_at', new Date(Date.now() - 3 * 3600e3).toISOString())
+        .eq('status', 'scheduled').order('starts_at').limit(1);
+      game = data?.[0];
+    }
+    const box = document.getElementById('hero-game');
+    if (!game) { box.innerHTML = '<p class="text-sm text-white/60">No games on the books yet. Check back once the season draw is posted.</p>'; return; }
+
+    const isLive = game.status === 'live';
+    box.innerHTML = `
+      <p class="text-xs ${isLive ? 'pulse-live text-red-300' : 'text-white/60'} mb-5">
+        ${isLive ? `Live · ${ordinal(game.period)} period` : `Next up · ${fmtDate(game.starts_at)}`}
+      </p>
+      <div class="flex items-center justify-between gap-4">
+        <div class="flex-1"><p class="display text-xl">${esc(game.away?.name ?? 'TBD')}</p></div>
+        <p class="scoreline text-4xl">${isLive || game.status === 'final' ? `${game.away_score}–${game.home_score}` : fmtTime(game.starts_at)}</p>
+        <div class="flex-1 text-right"><p class="display text-xl">${esc(game.home?.name ?? 'TBD')}</p></div>
+      </div>
+      <p class="text-xs text-white/55 mt-5 pt-4 border-t border-white/15">${esc(game.division ?? '')} · ${esc(game.venue ?? '')}</p>
+      <a href="live.html" class="btn btn-ghost w-full mt-4 !py-2 !text-xs">${isLive ? 'Follow live scoring' : 'Live scoreboard'}</a>`;
+  }
+
+  async function weekGames() {
+    const { data } = await sb.from('games').select(sel)
+      .gte('starts_at', new Date(Date.now() - 3 * 3600e3).toISOString())
+      .lte('starts_at', new Date(Date.now() + 7 * 864e5).toISOString())
+      .order('starts_at').limit(6);
+    const el = document.getElementById('week-games');
+    if (!data?.length) { el.innerHTML = '<p class="text-sm text-gray-500">Nothing scheduled in the next seven days.</p>'; return; }
+    el.innerHTML = data.map(g => `
+      <a href="live.html#${g.id}" class="panel px-5 py-4 grid grid-cols-[auto,1fr,auto] items-center gap-5 hover:bg-[var(--ice)] transition">
+        <div class="text-sm w-32">
+          <p class="font-bold">${fmtDate(g.starts_at)}</p>
+          <p class="text-gray-500">${fmtTime(g.starts_at)}</p>
+        </div>
+        <p class="display text-lg">${esc(g.away?.name ?? 'TBD')} <span class="text-[var(--ivy-sprig)] font-normal">at</span> ${esc(g.home?.name ?? 'TBD')}</p>
+        <p class="text-xs text-gray-500 text-right">${esc(g.division ?? '')}<br>${esc(g.venue ?? '')}</p>
+      </a>`).join('');
+  }
+
+  async function leaders() {
+    const { data } = await sb.from('player_stats').select('*').order('points', { ascending: false }).limit(8);
+    const el = document.getElementById('leaders');
+    if (!data?.length) { el.innerHTML = '<tr><td colspan="5" class="text-sm text-gray-500">No scoring recorded yet.</td></tr>'; return; }
+    el.innerHTML = data.map(p => `<tr>
+      <td class="font-semibold">${esc(p.first_name)} ${esc(p.last_name)}</td>
+      <td class="text-gray-600">${esc(p.team_name ?? '—')}</td>
+      <td class="text-right">${p.goals}</td><td class="text-right">${p.assists}</td>
+      <td class="text-right font-bold">${p.points}</td></tr>`).join('');
+  }
+
+  async function stats() {
+    const [t, p, g] = await Promise.all([
+      sb.from('teams').select('id', { count: 'exact', head: true }),
+      sb.from('players').select('id', { count: 'exact', head: true }),
+      sb.from('games').select('id', { count: 'exact', head: true }).eq('status', 'final')
+    ]);
+    document.getElementById('stat-teams').textContent = t.count ?? 0;
+    document.getElementById('stat-players').textContent = p.count ?? 0;
+    document.getElementById('stat-games').textContent = g.count ?? 0;
+  }
+
+  async function news() {
+    const { data } = await sb.from('announcements').select('*').eq('published', true)
+      .order('published_at', { ascending: false }).limit(3);
+    const el = document.getElementById('news');
+    if (!data?.length) { el.innerHTML = '<p class="text-sm text-gray-500">No announcements posted.</p>'; return; }
+    el.innerHTML = data.map(n => `
+      <article class="panel overflow-hidden">
+        ${n.image_url ? `<img src="${esc(n.image_url)}" alt="" class="h-44 w-full object-cover">` : ''}
+        <div class="p-5">
+          <p class="text-xs text-gray-500">${fmtDate(n.published_at)}</p>
+          <h3 class="display text-xl mt-2">${esc(n.title)}</h3>
+          <p class="serif text-[#33463C] mt-2 text-[.95rem] leading-relaxed">${esc(n.body ?? '').slice(0, 180)}</p>
+          ${n.link_url ? `<a href="${esc(n.link_url)}" class="text-sm font-semibold mt-3 inline-block" style="color:var(--ivy)">Read on</a>` : ''}
+        </div>
+      </article>`).join('');
+  }
+
+  heroGame(); weekGames(); leaders(); stats(); news();
+
+  /* Live score changes push straight to the hero card. */
+  sb.channel('home-live').on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, heroGame).subscribe();
+});
+</script>
+</body>
+</html>

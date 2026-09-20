@@ -1,0 +1,161 @@
+/* ===============================================================
+   Ivy League design system
+   Palette pulled from the league crest:
+     ivy      #09522B   crest green
+     evergreen#052E19   deepest shade, used for large fields
+     sprig    #7FA98E   soft vine tint for quiet detail
+   Accents chosen to complement, not compete:
+     brass    #C08A2B   pint-gold, used sparingly for emphasis
+     ice      #E8EEEA   cool pale ground (rink white)
+     chalk    #FFFFFF
+=============================================================== */
+
+:root {
+  --ivy:        #09522B;
+  --ivy-deep:   #052E19;
+  --ivy-mid:    #0C6B39;
+  --ivy-sprig:  #7FA98E;
+  --brass:      #C08A2B;
+  --brass-soft: #E7C888;
+  --ice:        #E8EEEA;
+  --paper:      #F7F9F7;
+  --ink:        #0A1410;
+  --line:       rgba(9, 82, 43, 0.14);
+
+  --shell: min(1240px, 92vw);
+}
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+.shell { width: var(--shell); margin-inline: auto; }
+
+/* ---- Typography -------------------------------------------- */
+.display {
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-weight: 800;
+  font-stretch: 118%;
+  letter-spacing: -0.02em;
+  line-height: 0.94;
+}
+.lede {
+  font-family: 'Newsreader', Georgia, serif;
+  font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+  line-height: 1.6;
+  max-width: 62ch;
+}
+.serif { font-family: 'Newsreader', Georgia, serif; }
+.tnum  { font-variant-numeric: tabular-nums; }
+
+/* Section marker: a hairline rule + vine tick, used instead of
+   the usual all-caps eyebrow label. */
+.rule {
+  display: flex; align-items: center; gap: .85rem;
+  font-size: .82rem; font-weight: 600; letter-spacing: .04em;
+  color: var(--ivy);
+}
+.rule::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, var(--line), transparent);
+}
+
+/* ---- Surfaces ---------------------------------------------- */
+.panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.panel-deep {
+  background: var(--ivy-deep);
+  color: #EAF1EC;
+  border-radius: 6px;
+}
+
+/* Crest watermark used behind the hero and footer */
+.crest-field {
+  background-color: var(--ivy);
+  background-image:
+    radial-gradient(120% 90% at 78% 8%, rgba(255,255,255,.10), transparent 60%),
+    radial-gradient(70% 70% at 10% 100%, rgba(5,46,25,.75), transparent 70%);
+}
+
+/* ---- Buttons ----------------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .55rem; padding: .78rem 1.45rem; border-radius: 3px;
+  font-weight: 650; font-size: .95rem; line-height: 1;
+  transition: background-color .18s ease, color .18s ease, border-color .18s ease, transform .18s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--ivy); color: #fff; }
+.btn-primary:hover { background: var(--ivy-deep); }
+.btn-brass { background: var(--brass); color: #1B1204; }
+.btn-brass:hover { background: #A9761F; color: #fff; }
+.btn-ghost { border: 1px solid rgba(255,255,255,.45); color: #fff; }
+.btn-ghost:hover { background: rgba(255,255,255,.12); }
+.btn-quiet { border: 1px solid var(--line); color: var(--ivy); background: #fff; }
+.btn-quiet:hover { background: var(--ice); }
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+/* ---- Forms ------------------------------------------------- */
+.field {
+  width: 100%; padding: .72rem .85rem;
+  border: 1px solid var(--line); border-radius: 3px;
+  background: #fff; font-size: .95rem; color: var(--ink);
+}
+.field:focus { border-color: var(--ivy); }
+.label { display: block; font-size: .82rem; font-weight: 600; margin-bottom: .35rem; color: #33463C; }
+
+/* ---- Tables (HockeyShift-style dense data) ------------------ */
+.grid-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.grid-table thead th {
+  text-align: left; font-weight: 700; font-size: .78rem;
+  color: #FFFFFF; background: var(--ivy);
+  padding: .6rem .7rem; white-space: nowrap;
+}
+.grid-table tbody td { padding: .62rem .7rem; border-bottom: 1px solid var(--line); }
+.grid-table tbody tr:nth-child(even) { background: #FBFCFB; }
+.grid-table tbody tr:hover { background: var(--ice); }
+
+/* ---- Live scoreboard --------------------------------------- */
+.scoreline { font-family: 'Archivo', sans-serif; font-weight: 800; font-stretch: 125%; line-height: 1; }
+.pulse-live::before {
+  content: ''; width: .5rem; height: .5rem; border-radius: 99px;
+  background: #E1462F; display: inline-block; margin-right: .45rem;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+
+/* ---- Conrad ------------------------------------------------ */
+#conrad-panel { box-shadow: 0 24px 60px -20px rgba(5,46,25,.45); }
+.conrad-bubble { max-width: 85%; padding: .6rem .8rem; border-radius: 10px; font-size: .9rem; line-height: 1.5; }
+.conrad-user { background: var(--ivy); color: #fff; margin-left: auto; border-bottom-right-radius: 2px; }
+.conrad-bot  { background: var(--ice); color: var(--ink); border-bottom-left-radius: 2px; }
+.conrad-typing span {
+  display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 99px;
+  background: var(--ivy-sprig); animation: blink 1.2s infinite;
+}
+.conrad-typing span:nth-child(2) { animation-delay: .2s; }
+.conrad-typing span:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
+
+/* Hero entrance — one orchestrated moment, nothing else animates on load */
+.rise { opacity: 0; transform: translateY(14px); animation: rise .7s cubic-bezier(.2,.7,.3,1) forwards; }
+.rise-2 { animation-delay: .1s; }
+.rise-3 { animation-delay: .2s; }
+@keyframes rise { to { opacity: 1; transform: none; } }

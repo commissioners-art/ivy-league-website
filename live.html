@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live scores — Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css">
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="crest-field text-white py-12">
+  <div class="shell">
+    <h1 class="display text-[clamp(2rem,5vw,3.4rem)]">Live scoreboard</h1>
+    <p class="lede text-white/80 mt-3">Updated from the scorer's bench, not after the fact. Leave this open at the bar.</p>
+  </div>
+</section>
+
+<section class="shell py-12 grid gap-10">
+  <div id="live-wrap"></div>
+  <div>
+    <div class="rule mb-4">Today's results</div>
+    <div id="today" class="grid gap-2"></div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/conrad.js"></script>
+<script>
+document.addEventListener('ivy:ready', async () => {
+  const { fmtTime, fmtClock, liveClockSeconds, ordinal, esc } = window.Ivy;
+  const SEL = 'id, starts_at, venue, division, status, home_score, away_score, period, clock_seconds, clock_running, clock_updated_at, home:home_team_id(id,name,colour), away:away_team_id(id,name,colour)';
+  let games = [], events = {};
+
+  async function load() {
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    const { data } = await sb.from('games').select(SEL)
+      .gte('starts_at', midnight.toISOString())
+      .lte('starts_at', new Date(Date.now() + 864e5).toISOString())
+      .order('starts_at');
+    games = data || [];
+
+    const liveIds = games.filter(g => g.status === 'live').map(g => g.id);
+    if (liveIds.length) {
+      const { data: ev } = await sb.from('game_events')
+        .select('game_id, type, period, clock, minutes, infraction, team_id, player:player_id(first_name,last_name,jersey_number)')
+        .in('game_id', liveIds).order('created_at', { ascending: false });
+      events = {};
+      (ev || []).forEach(e => (events[e.game_id] ||= []).push(e));
+    }
+    render();
+  }
+
+  function card(g) {
+    const live = g.status === 'live';
+    const log = (events[g.id] || []).slice(0, 8).map(e => `
+      <li class="flex gap-3 text-sm py-1.5 border-b last:border-0" style="border-color:var(--line)">
+        <span class="text-gray-400 w-20 shrink-0 tnum">${ordinal(e.period)} ${esc(e.clock ?? '')}</span>
+        <span class="font-semibold" style="color:${e.type === 'penalty' ? 'var(--brass)' : 'var(--ivy)'}">${e.type === 'penalty' ? 'PEN' : 'GOAL'}</span>
+        <span>${e.player ? `#${e.player.jersey_number ?? ''} ${esc(e.player.first_name)} ${esc(e.player.last_name)}` : 'Team'}
+          ${e.type === 'penalty' ? `<span class="text-gray-500">— ${esc(e.infraction ?? '')} (${e.minutes})</span>` : ''}</span>
+      </li>`).join('');
+
+    return `
+      <article id="${g.id}" class="panel overflow-hidden scroll-mt-24 mb-6">
+        <div class="px-5 py-3 flex items-center justify-between text-white" style="background:var(--ivy-deep)">
+          <span class="text-xs ${live ? 'pulse-live' : ''}">${live ? 'Live' : g.status === 'final' ? 'Final' : fmtTime(g.starts_at)}</span>
+          <span class="text-xs text-white/60">${esc(g.division ?? '')} · ${esc(g.venue ?? '')}</span>
+        </div>
+        <div class="p-6 grid grid-cols-[1fr,auto,1fr] items-center gap-4 text-center">
+          <p class="display text-xl md:text-2xl">${esc(g.away?.name ?? 'TBD')}</p>
+          <div>
+            <p class="scoreline text-5xl md:text-6xl">${g.away_score}<span class="text-[var(--ivy-sprig)] mx-2">–</span>${g.home_score}</p>
+            ${live ? `<p class="text-sm font-bold mt-2 tnum" data-clock="${g.id}" style="color:var(--brass)">${ordinal(g.period)} · ${fmtClock(liveClockSeconds(g))}</p>` : ''}
+          </div>
+          <p class="display text-xl md:text-2xl">${esc(g.home?.name ?? 'TBD')}</p>
+        </div>
+        ${log ? `<div class="px-5 pb-5"><p class="rule mb-2">Scoring &amp; penalties</p><ul>${log}</ul></div>` : ''}
+      </article>`;
+  }
+
+  function render() {
+    const liveGames = games.filter(g => g.status === 'live');
+    const rest = games.filter(g => g.status !== 'live');
+    document.getElementById('live-wrap').innerHTML = liveGames.length
+      ? liveGames.map(card).join('')
+      : `<div class="panel p-8 text-center">
+           <p class="display text-2xl">No game in progress</p>
+           <p class="serif text-[#33463C] mt-2">When a scorekeeper starts a game it appears here instantly.
+             <a href="schedule.html" class="underline" style="color:var(--ivy)">See what's coming up</a>.</p>
+         </div>`;
+    document.getElementById('today').innerHTML = rest.length
+      ? rest.map(card).join('')
+      : '<p class="text-sm text-gray-500">Nothing else on today\'s slate.</p>';
+    if (location.hash) document.querySelector(location.hash)?.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  /* Tick the clock locally between database writes. */
+  setInterval(() => {
+    games.filter(g => g.status === 'live').forEach(g => {
+      const el = document.querySelector(`[data-clock="${g.id}"]`);
+      if (el) el.textContent = `${ordinal(g.period)} · ${fmtClock(liveClockSeconds(g))}`;
+    });
+  }, 1000);
+
+  await load();
+  sb.channel('public-live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, load)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'game_events' }, load)
+    .subscribe();
+});
+</script>
+</body>
+</html>

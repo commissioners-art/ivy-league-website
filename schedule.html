@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schedule — Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css">
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="crest-field text-white py-12">
+  <div class="shell">
+    <h1 class="display text-[clamp(2rem,5vw,3.4rem)]">Season schedule</h1>
+    <p class="lede text-white/80 mt-3">Every fixture, result and puck drop. Scores update the moment the scorekeeper enters them.</p>
+  </div>
+</section>
+
+<section class="shell py-10">
+  <div class="flex flex-wrap gap-3 items-end mb-6">
+    <div><label class="label" for="f-division">Division</label>
+      <select id="f-division" class="field !w-48"><option value="">All divisions</option></select></div>
+    <div><label class="label" for="f-team">Team</label>
+      <select id="f-team" class="field !w-56"><option value="">All teams</option></select></div>
+    <div><label class="label" for="f-when">Showing</label>
+      <select id="f-when" class="field !w-44">
+        <option value="upcoming">Upcoming games</option>
+        <option value="results">Results</option>
+        <option value="all">Whole season</option>
+      </select></div>
+  </div>
+
+  <div id="rows" class="grid gap-2"></div>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/conrad.js"></script>
+<script>
+document.addEventListener('ivy:ready', async () => {
+  const { fmtDate, fmtTime, esc, ordinal } = window.Ivy;
+  const SEL = 'id, starts_at, venue, division, status, home_score, away_score, period, home:home_team_id(id,name), away:away_team_id(id,name)';
+  let all = [];
+
+  const { data: teams } = await sb.from('teams').select('id,name,division').order('division').order('name');
+  const divs = [...new Set((teams || []).map(t => t.division))];
+  document.getElementById('f-division').insertAdjacentHTML('beforeend',
+    divs.map(d => `<option>${esc(d)}</option>`).join(''));
+  document.getElementById('f-team').insertAdjacentHTML('beforeend',
+    (teams || []).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join(''));
+
+  async function load() {
+    const { data } = await sb.from('games').select(SEL).order('starts_at');
+    all = data || [];
+    render();
+  }
+
+  function render() {
+    const div = document.getElementById('f-division').value;
+    const team = document.getElementById('f-team').value;
+    const when = document.getElementById('f-when').value;
+    const now = Date.now();
+
+    let rows = all.filter(g => {
+      if (div && g.division !== div) return false;
+      if (team && g.home?.id !== team && g.away?.id !== team) return false;
+      if (when === 'upcoming') return g.status !== 'final' && new Date(g.starts_at).getTime() > now - 3 * 3600e3;
+      if (when === 'results') return g.status === 'final';
+      return true;
+    });
+    if (when === 'results') rows = rows.reverse();
+
+    const el = document.getElementById('rows');
+    if (!rows.length) { el.innerHTML = '<p class="text-sm text-gray-500 py-8">No games match those filters.</p>'; return; }
+
+    let lastDay = '';
+    el.innerHTML = rows.map(g => {
+      const day = fmtDate(g.starts_at, { year: 'numeric' });
+      const header = day !== lastDay ? `<p class="rule mt-8 mb-3">${day}</p>` : '';
+      lastDay = day;
+      const live = g.status === 'live';
+      const final = g.status === 'final';
+      const middle = live || final
+        ? `<span class="scoreline text-2xl">${g.away_score}–${g.home_score}</span>`
+        : `<span class="text-lg font-semibold">${fmtTime(g.starts_at)}</span>`;
+      const badge = live
+        ? `<span class="pulse-live text-xs font-bold text-red-600">${ordinal(g.period)}</span>`
+        : final ? '<span class="text-xs text-gray-500">Final</span>'
+        : g.status === 'postponed' ? '<span class="text-xs font-semibold" style="color:var(--brass)">Postponed</span>' : '';
+
+      return `${header}
+        <a href="live.html#${g.id}" class="panel px-5 py-4 grid grid-cols-[1fr,auto,1fr] md:grid-cols-[.6fr,1fr,auto,1fr,.6fr] items-center gap-4 hover:bg-[var(--ice)] transition">
+          <p class="hidden md:block text-xs text-gray-500">${esc(g.division ?? '')}</p>
+          <p class="display text-base md:text-lg md:text-right">${esc(g.away?.name ?? 'TBD')}</p>
+          <div class="text-center min-w-24">${middle}<div>${badge}</div></div>
+          <p class="display text-base md:text-lg">${esc(g.home?.name ?? 'TBD')}</p>
+          <p class="hidden md:block text-xs text-gray-500 text-right">${esc(g.venue ?? '')}</p>
+        </a>`;
+    }).join('');
+  }
+
+  ['f-division', 'f-team', 'f-when'].forEach(id =>
+    document.getElementById(id).addEventListener('change', render));
+
+  await load();
+  sb.channel('sched-live').on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, load).subscribe();
+});
+</script>
+</body>
+</html>
