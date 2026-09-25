@@ -55,7 +55,7 @@ async function boot(session) {
   document.getElementById('who').textContent = `${staff.full_name || staff.email} · ${staff.role}`;
 
   const tabs = me.role === 'admin'
-    ? [['score', 'Scorekeeping'], ['regs', 'Registrations'], ['sched', 'Schedule'], ['teams', 'Teams & rosters'], ['pages', 'Pages'], ['pay', 'Payments'], ['news', 'News']]
+    ? [['score', 'Scorekeeping'], ['regs', 'Registrations'], ['sched', 'Schedule'], ['teams', 'Teams & rosters'], ['pages', 'Pages'], ['photos', 'Photos'], ['pay', 'Payments'], ['news', 'News']]
     : [['score', 'Scorekeeping']];
 
   document.getElementById('tabs').innerHTML = tabs.map(([k, l]) =>
@@ -72,7 +72,7 @@ function render() {
   document.querySelectorAll('#tabs [data-tab]').forEach(b => {
     b.className = `px-4 py-2 text-sm font-semibold rounded-sm whitespace-nowrap ${b.dataset.tab === view ? 'bg-white/20 text-white' : 'text-white/65 hover:text-white'}`;
   });
-  ({ score: scoreView, regs: regsView, sched: schedView, teams: teamsView, pages: pagesView, pay: payView, news: newsView }[view])();
+  ({ score: scoreView, regs: regsView, sched: schedView, teams: teamsView, pages: pagesView, photos: photosView, pay: payView, news: newsView }[view])();
 }
 
 const mount = html => { document.getElementById('view').innerHTML = html; };
@@ -576,8 +576,8 @@ async function pagesView() {
 
   mount(`
     <h2 class="display text-2xl mb-1">Pages</h2>
-    <p class="text-sm text-gray-600 mb-5 max-w-2xl">Every editable piece of text and imagery on the public site. Change it here and save —
-      the website updates for everyone on their next page load.</p>
+    <p class="text-sm text-gray-600 mb-5 max-w-2xl">Every editable piece of text, imagery, and colour on the public site. Change it here and save —
+      the website updates for everyone on their next page load. The colour swatches near the bottom recolour the green/gold sections site-wide.</p>
     <div class="grid gap-3 max-w-3xl">
       ${(rows || []).map(r => `
         <div class="panel p-4" data-key="${esc(r.key)}">
@@ -587,6 +587,8 @@ async function pagesView() {
           </div>
           ${r.kind === 'longtext'
             ? `<textarea id="k-${esc(r.key)}" rows="3" class="field">${esc(r.value ?? '')}</textarea>`
+            : r.kind === 'color'
+            ? `<input id="k-${esc(r.key)}" type="color" class="field !p-1 h-11 !w-28" value="${esc(r.value || '#09522B')}">`
             : `<input id="k-${esc(r.key)}" class="field" value="${esc(r.value ?? '')}" ${r.kind === 'image' ? 'placeholder="Image URL"' : ''}>`}
           ${r.kind === 'image' && r.value ? `<img src="${esc(r.value)}" alt="" class="h-24 mt-3 rounded object-cover">` : ''}
         </div>`).join('')}
@@ -618,13 +620,136 @@ async function pagesView() {
   };
 }
 
+/* ================= 5b. Photos (section image galleries) ======== */
+async function photosView() {
+  const { data: imgs } = await sb.from('gallery_images').select('*').order('section').order('sort');
+  const sections = [...new Set((imgs || []).map(g => g.section))];
+
+  mount(`
+    <h2 class="display text-2xl mb-1">Photos</h2>
+    <p class="text-sm text-gray-600 mb-5 max-w-2xl">Add photos to a section of the site, then use the arrows to reorder them.
+      "home" is the photo strip near the bottom of the home page.</p>
+
+    <div class="panel p-5 mb-6 max-w-3xl">
+      <div class="rule mb-3">Add a photo</div>
+      <div class="grid md:grid-cols-[1fr,2fr,auto] gap-3">
+        <input id="g-section" class="field" placeholder="Section" value="home">
+        <input id="g-url" class="field" placeholder="Image URL">
+        <button id="g-upload" class="btn btn-quiet whitespace-nowrap">Upload image</button>
+      </div>
+      <input id="g-alt" class="field mt-3" placeholder="Short description (for accessibility)">
+      <input id="g-file" type="file" accept="image/*" class="hidden">
+      <button id="add-photo" class="btn btn-primary mt-3">Add photo</button>
+    </div>
+
+    ${sections.length ? sections.map(sec => `
+      <div class="mb-8 max-w-3xl">
+        <div class="rule mb-3">${esc(sec)}</div>
+        <div class="grid gap-2">
+          ${imgs.filter(g => g.section === sec).map((g, i, arr) => `
+            <div class="panel p-3 flex items-center gap-3" data-photo="${g.id}">
+              <img src="${esc(g.url)}" alt="" class="h-14 w-20 object-cover rounded">
+              <span class="text-xs text-gray-500 flex-1 truncate">${esc(g.alt || g.url)}</span>
+              <button data-move="-1" class="btn btn-quiet !px-2 !py-1 !text-xs" ${i === 0 ? 'disabled' : ''}>↑</button>
+              <button data-move="1" class="btn btn-quiet !px-2 !py-1 !text-xs" ${i === arr.length - 1 ? 'disabled' : ''}>↓</button>
+              <button data-delg="${g.id}" class="text-xs text-red-700 hover:underline">Remove</button>
+            </div>`).join('')}
+        </div>
+      </div>`).join('') : '<p class="text-sm text-gray-500 max-w-3xl">No photos yet — add one above.</p>'}`);
+
+  document.getElementById('g-upload').onclick = () => document.getElementById('g-file').click();
+  document.getElementById('g-file').onchange = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    const path = `${Date.now()}-${file.name.replace(/[^\w.\-]/g, '_')}`;
+    const { error } = await sb.storage.from('media').upload(path, file, { upsert: true });
+    if (error) return toast('Upload failed — check the media bucket exists.', false);
+    const { data } = sb.storage.from('media').getPublicUrl(path);
+    document.getElementById('g-url').value = data.publicUrl;
+    toast('Uploaded — click "Add photo" to place it.');
+  };
+
+  document.getElementById('add-photo').onclick = async () => {
+    const section = document.getElementById('g-section').value.trim() || 'home';
+    const url = document.getElementById('g-url').value.trim();
+    if (!url) return toast('Paste or upload an image first.', false);
+    const maxSort = imgs.filter(g => g.section === section).reduce((m, g) => Math.max(m, g.sort), -1);
+    const { error } = await sb.from('gallery_images').insert({
+      section, url, alt: document.getElementById('g-alt').value || null, sort: maxSort + 1
+    });
+    if (error) return toast('Could not add that photo.', false);
+    photosView();
+  };
+
+  document.getElementById('view').addEventListener('click', async e => {
+    const del = e.target.closest('[data-delg]');
+    if (del) {
+      if (!confirm('Remove this photo?')) return;
+      await sb.from('gallery_images').delete().eq('id', del.dataset.delg);
+      return photosView();
+    }
+    const mv = e.target.closest('[data-move]');
+    if (mv) {
+      const row = mv.closest('[data-photo]');
+      const id = row.dataset.photo;
+      const g = imgs.find(x => x.id === id);
+      const siblings = imgs.filter(x => x.section === g.section).sort((a, b) => a.sort - b.sort);
+      const idx = siblings.findIndex(x => x.id === id);
+      const swapWith = siblings[idx + Number(mv.dataset.move)];
+      if (!swapWith) return;
+      await Promise.all([
+        sb.from('gallery_images').update({ sort: swapWith.sort }).eq('id', g.id),
+        sb.from('gallery_images').update({ sort: g.sort }).eq('id', swapWith.id)
+      ]);
+      photosView();
+    }
+  });
+}
+
 /* ================= 6. Payment links ================= */
+let paymentsUnlocked = false;
+
 async function payView() {
+  if (!paymentsUnlocked) return payLockView();
+  await payViewInner();
+}
+
+function payLockView() {
+  mount(`
+    <div class="max-w-sm">
+      <h2 class="display text-2xl mb-1">Payments</h2>
+      <p class="text-sm text-gray-600 mb-5">This section is PIN-protected so Stripe links can't be changed by mistake.
+        Enter the payments PIN to continue.</p>
+      <label class="label" for="pin-input">PIN</label>
+      <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" class="field">
+      <button id="pin-go" class="btn btn-primary mt-3 w-full">Unlock</button>
+      <p id="pin-msg" class="text-sm text-red-700 mt-2 hidden"></p>
+    </div>`);
+
+  const go = async () => {
+    const pin = document.getElementById('pin-input').value;
+    const { data, error } = await sb.rpc('check_payments_pin', { candidate: pin });
+    if (error || !data) {
+      const m = document.getElementById('pin-msg');
+      m.textContent = 'Wrong PIN.'; m.classList.remove('hidden');
+      return;
+    }
+    paymentsUnlocked = true;
+    payView();
+  };
+  document.getElementById('pin-go').onclick = go;
+  document.getElementById('pin-input').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+}
+
+async function payViewInner() {
   const { data: links } = await sb.from('payment_links').select('*').order('sort');
 
   mount(`
-    <h2 class="display text-2xl mb-1">Payment links</h2>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-1">
+      <h2 class="display text-2xl">Payment links</h2>
+      <button id="set-pin" class="btn btn-quiet !text-xs !py-2">Set / change PIN</button>
+    </div>
     <p class="text-sm text-gray-600 mb-5 max-w-2xl">Create the link in Stripe, paste it here, and it appears on the registration page.
+      Add as many links as you need — one per division, per season, or per fee type — using "Add a link" below.
       Untick "Active" to retire a link without deleting it.</p>
     <div class="panel p-5 mb-6 max-w-3xl">
       <div class="rule mb-3">Add a link</div>
@@ -648,6 +773,13 @@ async function payView() {
           <div class="text-right"><button data-dell="${l.id}" class="text-xs text-red-700 hover:underline">Delete link</button></div>
         </div>`).join('') || '<p class="text-sm text-gray-500">No payment links yet.</p>'}
     </div>`);
+
+  document.getElementById('set-pin').onclick = async () => {
+    const pin = prompt('Set a new payments PIN (share it only with people you trust to edit Stripe links):');
+    if (!pin) return;
+    const { error } = await sb.rpc('set_payments_pin', { new_pin: pin });
+    toast(error ? 'Could not set the PIN — are you signed in as an admin?' : 'PIN updated.', !error);
+  };
 
   document.getElementById('add-link').onclick = async () => {
     const url = document.getElementById('p-url').value.trim();
