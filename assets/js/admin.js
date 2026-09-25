@@ -77,7 +77,12 @@ function render() {
   ({ score: scoreView, regs: regsView, sched: schedView, teams: teamsView, pages: pagesView, photos: photosView, pay: payView, news: newsView }[view])();
 }
 
-const mount = html => { document.getElementById('view').innerHTML = html; };
+const mount = html => {
+  const old = document.getElementById('view');
+  const fresh = old.cloneNode(false);   // strips every listener attached in previous renders
+  old.replaceWith(fresh);
+  fresh.innerHTML = html;
+};
 
 /* ================= 1. Scorekeeping ================= */
 async function scoreView() {
@@ -906,16 +911,19 @@ async function newsView() {
 
     <div class="grid gap-3 max-w-3xl">
       ${(items || []).map(n => `
-        <div class="panel p-4 flex items-start gap-4" data-news="${n.id}">
-          ${n.image_url ? `<img src="${esc(n.image_url)}" alt="" class="h-16 w-24 object-cover rounded">` : ''}
-          <div class="flex-1">
-            <p class="display text-lg">${esc(n.title)}</p>
-            <p class="text-xs text-gray-500">${fmtDT(n.published_at)}</p>
-            <p class="serif text-sm mt-1">${esc(n.body ?? '')}</p>
-          </div>
-          <div class="grid gap-2 text-right">
-            <label class="text-xs flex items-center gap-1"><input type="checkbox" data-nf="published" ${n.published ? 'checked' : ''}> Live</label>
-            <button data-deln="${n.id}" class="text-xs text-red-700 hover:underline">Delete</button>
+        <div class="panel p-4" data-news="${n.id}">
+          <div class="flex items-start gap-4">
+            ${n.image_url ? `<img src="${esc(n.image_url)}" alt="" class="h-16 w-24 object-cover rounded shrink-0">` : ''}
+            <div class="flex-1 grid gap-2">
+              <input class="field !text-base font-semibold" data-nf-text="title" value="${esc(n.title)}">
+              <textarea class="field !text-sm" rows="3" data-nf-text="body">${esc(n.body ?? '')}</textarea>
+              <p class="text-xs text-gray-500">${fmtDT(n.published_at)} · <a href="news.html?id=${n.id}" target="_blank" class="underline">Preview full article</a></p>
+            </div>
+            <div class="grid gap-2 text-right shrink-0">
+              <label class="text-xs flex items-center gap-1 justify-end"><input type="checkbox" data-nf="published" ${n.published ? 'checked' : ''}> Live</label>
+              <button data-savenews="${n.id}" class="btn btn-quiet !py-1.5 !px-3 !text-xs">Save</button>
+              <button data-deln="${n.id}" class="text-xs text-red-700 hover:underline">Delete</button>
+            </div>
           </div>
         </div>`).join('') || '<p class="text-sm text-gray-500">Nothing posted yet.</p>'}
     </div>`);
@@ -938,6 +946,17 @@ async function newsView() {
   });
 
   document.getElementById('view').addEventListener('click', async e => {
+    const save = e.target.closest('[data-savenews]');
+    if (save) {
+      const row = save.closest('[data-news]');
+      const title = row.querySelector('[data-nf-text="title"]').value.trim();
+      if (!title) return toast('A headline is required.', false);
+      const { error } = await sb.from('announcements').update({
+        title, body: row.querySelector('[data-nf-text="body"]').value
+      }).eq('id', save.dataset.savenews);
+      toast(error ? 'Could not save.' : 'Saved.', !error);
+      return;
+    }
     const b = e.target.closest('[data-deln]'); if (!b) return;
     if (!confirm('Delete this announcement?')) return;
     await sb.from('announcements').delete().eq('id', b.dataset.deln);
