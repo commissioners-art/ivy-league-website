@@ -670,7 +670,11 @@ async function pagesView() {
     syncPreview();
   });
   document.getElementById('preview-page').addEventListener('change', e => { frame.src = e.target.value; });
-  document.getElementById('view').addEventListener('input', syncPreview);
+  let previewDebounce;
+  document.getElementById('view').addEventListener('input', () => {
+    clearTimeout(previewDebounce);
+    previewDebounce = setTimeout(syncPreview, 500);
+  });
 
   document.getElementById('save-content').onclick = async () => {
     const updates = [...document.querySelectorAll('[data-key]')].map(d => ({
