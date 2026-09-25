@@ -22,6 +22,23 @@
   </div>
 </section>
 
+<section class="shell pt-10">
+  <div class="panel-deep p-6 grid sm:grid-cols-3 gap-6">
+    <div>
+      <span class="display text-2xl" style="color:var(--brass-soft)">1</span>
+      <p class="serif text-sm text-white/80 mt-1">Find your team.</p>
+    </div>
+    <div>
+      <span class="display text-2xl" style="color:var(--brass-soft)">2</span>
+      <p class="serif text-sm text-white/80 mt-1">Fill in the form, then pay through the secure Stripe link.</p>
+    </div>
+    <div>
+      <span class="display text-2xl" style="color:var(--brass-soft)">3</span>
+      <p class="serif text-sm text-white/80 mt-1">You'll get a confirmation email, and your name appears on the <a href="teams.html" class="underline">roster</a> once payment clears.</p>
+    </div>
+  </div>
+</section>
+
 <section class="shell py-12 grid lg:grid-cols-[1.4fr,1fr] gap-12 items-start">
 
   <!-- ── Form ─────────────────────────────────────────────────── -->
@@ -82,14 +99,6 @@
   <aside class="grid gap-4 lg:sticky lg:top-6">
     <div class="rule">Fees &amp; payment</div>
     <div id="pay-links" class="grid gap-3"></div>
-    <div class="panel-deep p-5">
-      <p class="display text-lg mb-2">How it works</p>
-      <ol class="text-sm text-white/80 grid gap-2 list-decimal pl-4 serif">
-        <li>Save your details above.</li>
-        <li>Pay through the Stripe link for your division.</li>
-        <li>We confirm payment and your name appears on the <a href="teams.html" class="underline">roster</a>.</li>
-      </ol>
-    </div>
   </aside>
 </section>
 
@@ -162,3 +171,5 @@ document.addEventListener('ivy:ready', async () => {
   });
 });
 </script>
+</body>
+</html>
