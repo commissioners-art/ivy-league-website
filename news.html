@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>News — Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css">
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="shell py-12 max-w-3xl" id="article">
+  <p class="text-sm text-gray-500">Loading…</p>
+</section>
+
+<section class="shell py-10 max-w-3xl">
+  <div class="rule mb-4">More from the league office</div>
+  <div id="more" class="grid gap-3"></div>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/conrad.js"></script>
+<script>
+document.addEventListener('ivy:ready', async () => {
+  const { fmtDate, esc } = window.Ivy;
+  const id = new URLSearchParams(location.search).get('id');
+  const el = document.getElementById('article');
+
+  if (!id) { el.innerHTML = '<p class="text-sm text-gray-500">No article specified.</p>'; return; }
+
+  const { data: n } = await sb.from('announcements').select('*').eq('id', id).single();
+  if (!n) { el.innerHTML = '<p class="text-sm text-gray-500">That announcement could not be found. <a href="index.html" class="underline" style="color:var(--ivy)">Back to home</a>.</p>'; return; }
+
+  document.title = `${n.title} — Milton Ivy League`;
+
+  const paragraphs = (n.body ?? '').split(/\n\s*\n/).filter(p => p.trim())
+    .map(p => `<p class="mb-4">${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+
+  el.innerHTML = `
+    <a href="index.html" class="text-sm font-semibold" style="color:var(--ivy)">&larr; Back to home</a>
+    <p class="text-sm text-gray-500 mt-6">${fmtDate(n.published_at, { year: 'numeric' })}</p>
+    <h1 class="display text-3xl md:text-4xl mt-2 mb-6">${esc(n.title)}</h1>
+    ${n.image_url ? `<img src="${esc(n.image_url)}" alt="" class="w-full rounded-md mb-8 object-cover" style="max-height:26rem">` : ''}
+    <div class="serif text-[#243b30] text-lg leading-relaxed">${paragraphs || '<p class="text-gray-500">Nothing more to read here yet.</p>'}</div>
+    ${n.link_url ? `<a href="${esc(n.link_url)}" class="btn btn-quiet mt-8">Related link</a>` : ''}`;
+
+  const { data: more } = await sb.from('announcements').select('*').eq('published', true).neq('id', id)
+    .order('published_at', { ascending: false }).limit(4);
+  const moreEl = document.getElementById('more');
+  moreEl.innerHTML = (more || []).length
+    ? more.map(m => `
+      <a href="news.html?id=${m.id}" class="panel px-5 py-4 flex items-center justify-between gap-4 hover:bg-[var(--ice)] transition">
+        <span class="display text-base">${esc(m.title)}</span>
+        <span class="text-xs text-gray-500 shrink-0">${fmtDate(m.published_at)}</span>
+      </a>`).join('')
+    : '<p class="text-sm text-gray-500">Nothing else posted yet.</p>';
+});
+</script>
+</body>
+</html>
