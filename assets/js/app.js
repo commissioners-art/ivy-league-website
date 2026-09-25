@@ -64,6 +64,43 @@ async function applyContent() {
     const v = map[el.dataset.cmsHref];
     if (v) el.href = v;
   });
+
+  applyTheme(map);
+}
+
+/* ---------- section colours -------------------------------------
+   Colours set in the admin "Pages" tab (kind: 'color') override the
+   CSS variables in ivy.css on every page load, live, site-wide.
+----------------------------------------------------------------*/
+function applyTheme(map) {
+  const VARS = {
+    'theme.ivy':      '--ivy',
+    'theme.ivy_deep': '--ivy-deep',
+    'theme.brass':    '--brass',
+    'theme.sprig':    '--ivy-sprig'
+  };
+  Object.entries(VARS).forEach(([key, cssVar]) => {
+    if (map[key]) document.documentElement.style.setProperty(cssVar, map[key]);
+  });
+}
+
+/* ---------- section photo galleries ------------------------------
+   Any element with data-gallery="key" is filled with the images
+   assigned to that section in the admin "Photos" tab, in order.
+----------------------------------------------------------------*/
+async function applyGalleries() {
+  const nodes = document.querySelectorAll('[data-gallery]');
+  if (!nodes.length) return;
+  const sections = [...new Set([...nodes].map(el => el.dataset.gallery))];
+  const { data } = await sb.from('gallery_images').select('*').in('section', sections).order('sort');
+  nodes.forEach(el => {
+    const imgs = (data || []).filter(g => g.section === el.dataset.gallery);
+    if (imgs.length) {
+      el.innerHTML = imgs.map(g =>
+        `<img src="${esc(g.url)}" alt="${esc(g.alt ?? '')}" class="w-full h-48 object-cover rounded-md">`).join('');
+      el.closest('section')?.classList.remove('hidden');
+    }
+  });
 }
 
 /* ---------- header / footer ---------- */
@@ -138,5 +175,6 @@ function chrome() {
 document.addEventListener('DOMContentLoaded', async () => {
   chrome();
   try { await applyContent(); } catch (e) { console.warn('Content load skipped:', e.message); }
+  try { await applyGalleries(); } catch (e) { console.warn('Gallery load skipped:', e.message); }
   document.dispatchEvent(new CustomEvent('ivy:ready'));
 });
