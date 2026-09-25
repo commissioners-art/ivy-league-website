@@ -6,15 +6,15 @@
 --------------------------------------------------------------- */
 const sb = window.sb;
 const TZ = IVY_CONFIG.TIMEZONE || 'America/Toronto';
- 
+
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDT = iso => new Date(iso).toLocaleString('en-CA', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ });
 const fmtClock = s => `${String(Math.floor(Math.max(0, s) / 60)).padStart(2, '0')}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
 const ordinal = n => ['', '1st', '2nd', '3rd', 'OT', 'SO'][n] || `${n}`;
 const toLocalInput = iso => { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
- 
+
 let me = null, view = 'score', tick = null;
- 
+
 function toast(text, ok = true) {
   const t = document.createElement('div');
   t.className = 'fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded text-sm text-white shadow-lg';
@@ -23,7 +23,7 @@ function toast(text, ok = true) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2600);
 }
- 
+
 /* ================= auth ================= */
 document.getElementById('login-form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -35,12 +35,12 @@ document.getElementById('login-form').addEventListener('submit', async e => {
   });
   if (error) { msg.textContent = 'That email and password did not match. Try again or ask an admin to reset it.'; msg.classList.remove('hidden'); }
 });
- 
+
 document.getElementById('signout').addEventListener('click', async () => { await sb.auth.signOut(); location.reload(); });
- 
+
 sb.auth.onAuthStateChange(async (_e, session) => { if (session) boot(session); });
 sb.auth.getSession().then(({ data }) => { if (data.session) boot(data.session); });
- 
+
 async function boot(session) {
   const { data: staff } = await sb.from('staff').select('*').eq('id', session.user.id).maybeSingle();
   if (!staff) {
@@ -53,11 +53,11 @@ async function boot(session) {
   document.getElementById('login').classList.add('hidden');
   document.getElementById('portal').classList.remove('hidden');
   document.getElementById('who').textContent = `${staff.full_name || staff.email} · ${staff.role}`;
- 
+
   const tabs = me.role === 'admin'
     ? [['score', 'Scorekeeping'], ['regs', 'Registrations'], ['sched', 'Schedule'], ['teams', 'Teams & rosters'], ['pages', 'Pages'], ['photos', 'Photos'], ['pay', 'Payments'], ['news', 'News']]
     : [['score', 'Scorekeeping']];
- 
+
   document.getElementById('tabs').innerHTML = tabs.map(([k, l]) =>
     `<button data-tab="${k}" class="px-4 py-2 text-sm font-semibold rounded-sm whitespace-nowrap">${l}</button>`).join('');
   document.getElementById('tabs').addEventListener('click', e => {
@@ -66,7 +66,7 @@ async function boot(session) {
   });
   render();
 }
- 
+
 function render() {
   clearInterval(tick);
   document.querySelectorAll('#tabs [data-tab]').forEach(b => {
@@ -74,9 +74,9 @@ function render() {
   });
   ({ score: scoreView, regs: regsView, sched: schedView, teams: teamsView, pages: pagesView, photos: photosView, pay: payView, news: newsView }[view])();
 }
- 
+
 const mount = html => { document.getElementById('view').innerHTML = html; };
- 
+
 /* ================= 1. Scorekeeping ================= */
 async function scoreView() {
   const from = new Date(); from.setHours(0, 0, 0, 0);
@@ -85,7 +85,7 @@ async function scoreView() {
     .gte('starts_at', from.toISOString())
     .lte('starts_at', new Date(Date.now() + 14 * 864e5).toISOString())
     .neq('status', 'final').order('starts_at');
- 
+
   mount(`
     <h2 class="display text-2xl mb-1">Scorekeeping</h2>
     <p class="text-sm text-gray-600 mb-5">Pick a game. Everything you enter appears on the public scoreboard immediately.</p>
@@ -101,23 +101,23 @@ async function scoreView() {
         </button>`).join('')
       : '<p class="text-sm text-gray-600">No games scheduled in the next two weeks.</p>'}
     </div>`);
- 
+
   document.getElementById('view').addEventListener('click', e => {
     const b = e.target.closest('[data-game]'); if (b) gameSheet(b.dataset.game);
   });
 }
- 
+
 async function gameSheet(id) {
   const { data: g } = await sb.from('games').select('*, home:home_team_id(id,name), away:away_team_id(id,name)').eq('id', id).single();
   const { data: players } = await sb.from('players').select('id,first_name,last_name,jersey_number,team_id')
     .in('team_id', [g.home_team_id, g.away_team_id].filter(Boolean));
- 
+
   const roster = tid => (players || []).filter(p => p.team_id === tid)
     .map(p => `<option value="${p.id}">#${p.jersey_number ?? '–'} ${esc(p.first_name)} ${esc(p.last_name)}</option>`).join('');
- 
+
   mount(`
     <button id="back" class="text-sm font-semibold mb-4" style="color:var(--ivy)">← All games</button>
- 
+
     <div class="panel-deep p-6 mb-5">
       <div class="grid grid-cols-[1fr,auto,1fr] items-center text-center gap-4">
         <div>
@@ -142,7 +142,7 @@ async function gameSheet(id) {
         </div>
       </div>
     </div>
- 
+
     <div class="grid lg:grid-cols-[1fr,1.2fr] gap-5">
       <!-- clock + status -->
       <div class="panel p-5 grid gap-4 h-fit">
@@ -160,7 +160,7 @@ async function gameSheet(id) {
           <button id="go-final" class="btn btn-quiet">Finalize game</button>
         </div>
       </div>
- 
+
       <!-- event entry -->
       <div class="panel p-5 grid gap-5">
         <div>
@@ -176,7 +176,7 @@ async function gameSheet(id) {
           </div>
           <button id="add-goal" class="btn btn-primary mt-3 w-full">Add goal &amp; update score</button>
         </div>
- 
+
         <div class="pt-4 border-t" style="border-color:var(--line)">
           <div class="rule mb-3">Record a penalty</div>
           <div class="grid sm:grid-cols-2 gap-3">
@@ -195,12 +195,12 @@ async function gameSheet(id) {
         </div>
       </div>
     </div>
- 
+
     <div class="panel p-5 mt-5">
       <div class="rule mb-3">Game sheet</div>
       <div id="sheet" class="grid"></div>
     </div>`);
- 
+
   /* roster dropdowns follow the team selectors */
   const fillRosters = () => {
     const gt = document.getElementById('goal-team').value;
@@ -212,22 +212,22 @@ async function gameSheet(id) {
   document.getElementById('goal-team').onchange = fillRosters;
   document.getElementById('pen-team').onchange = fillRosters;
   fillRosters();
- 
+
   document.getElementById('back').onclick = () => { clearInterval(tick); scoreView(); };
- 
+
   const save = async patch => {
     const { error } = await sb.from('games').update(patch).eq('id', id);
     if (error) toast('Could not save — check your connection.', false);
     return !error;
   };
- 
+
   /* ---- live local clock ---- */
   let state = { ...g };
   const remaining = () => state.clock_running
     ? Math.max(0, state.clock_seconds - (Date.now() - new Date(state.clock_updated_at).getTime()) / 1000)
     : state.clock_seconds;
   tick = setInterval(() => { document.getElementById('clock').textContent = fmtClock(remaining()); }, 250);
- 
+
   document.getElementById('clock-toggle').onclick = async () => {
     const running = !state.clock_running;
     const patch = { clock_running: running, clock_seconds: Math.round(remaining()), clock_updated_at: new Date().toISOString() };
@@ -238,7 +238,7 @@ async function gameSheet(id) {
     b.textContent = running ? 'Stop clock' : 'Start clock';
     b.className = `btn ${running ? 'btn-brass' : 'btn-primary'} flex-1`;
   };
- 
+
   document.getElementById('clock-set').onclick = async () => {
     const v = prompt('Time remaining in the period (mm:ss)', fmtClock(remaining()));
     if (!v) return;
@@ -246,13 +246,13 @@ async function gameSheet(id) {
     const patch = { clock_seconds: m * 60 + s, clock_updated_at: new Date().toISOString() };
     if (await save(patch)) { state = { ...state, ...patch }; }
   };
- 
+
   document.querySelectorAll('[data-period]').forEach(b => b.onclick = async () => {
     const p = Math.max(1, Math.min(5, state.period + Number(b.dataset.period)));
     const patch = { period: p, clock_seconds: 1200, clock_running: false, clock_updated_at: new Date().toISOString() };
     if (await save(patch)) { state = { ...state, ...patch }; gameSheet(id); }
   });
- 
+
   document.querySelectorAll('[data-score]').forEach(b => b.onclick = async () => {
     const side = b.dataset.score, field = side === 'home' ? 'home_score' : 'away_score';
     const val = Math.max(0, state[field] + Number(b.dataset.delta));
@@ -261,7 +261,7 @@ async function gameSheet(id) {
       document.getElementById(`${side}-score`).textContent = val;
     }
   });
- 
+
   document.getElementById('go-live').onclick = async () => {
     if (await save({ status: 'live', clock_updated_at: new Date().toISOString() })) { toast('Game is live on the site.'); gameSheet(id); }
   };
@@ -269,7 +269,7 @@ async function gameSheet(id) {
     if (!confirm('Finalize this game? Standings will update.')) return;
     if (await save({ status: 'final', clock_running: false })) { toast('Game finalized.'); clearInterval(tick); scoreView(); }
   };
- 
+
   document.getElementById('add-goal').onclick = async () => {
     const team = document.getElementById('goal-team').value;
     const field = team === state.home_team_id ? 'home_score' : 'away_score';
@@ -288,7 +288,7 @@ async function gameSheet(id) {
     toast('Goal recorded.');
     loadSheet();
   };
- 
+
   document.getElementById('add-pen').onclick = async () => {
     const { error } = await sb.from('game_events').insert({
       game_id: id, team_id: document.getElementById('pen-team').value, type: 'penalty',
@@ -302,7 +302,7 @@ async function gameSheet(id) {
     toast('Penalty recorded.');
     loadSheet();
   };
- 
+
   async function loadSheet() {
     const { data } = await sb.from('game_events')
       .select('id, type, period, clock, minutes, infraction, player:player_id(first_name,last_name,jersey_number), a1:assist1_id(last_name), a2:assist2_id(last_name)')
@@ -316,7 +316,7 @@ async function gameSheet(id) {
           ${e.type === 'penalty' ? `<span class="text-gray-500">${esc(e.infraction ?? '')} — ${e.minutes} min</span>` : ''}</span>
         <button data-del="${e.id}" class="text-xs text-red-700 hover:underline">Remove</button>
       </div>`).join('') : '<p class="text-sm text-gray-500">Nothing recorded yet.</p>';
- 
+
     document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
       if (!confirm('Remove this entry? Adjust the score manually if needed.')) return;
       await sb.from('game_events').delete().eq('id', b.dataset.del);
@@ -325,16 +325,16 @@ async function gameSheet(id) {
   }
   loadSheet();
 }
- 
+
 /* ================= 2. Registrations ================= */
 async function regsView() {
   const { data: regs } = await sb.from('registrations').select('*, team:team_id(name)').order('created_at', { ascending: false });
   const { data: teams } = await sb.from('teams').select('id,name,division').order('name');
- 
+
   const counts = (regs || []).reduce((a, r) => (a[r.status] = (a[r.status] || 0) + 1, a), {});
   const teamOpts = r => `<option value="">No team</option>` +
     (teams || []).map(t => `<option value="${t.id}" ${t.id === r.team_id ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
- 
+
   mount(`
     <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
       <div>
@@ -369,7 +369,7 @@ async function regsView() {
         </tbody>
       </table>
     </div>`);
- 
+
   document.getElementById('view').addEventListener('change', async e => {
     const sel = e.target.closest('[data-field]'); if (!sel) return;
     const id = sel.closest('tr').dataset.id;
@@ -377,7 +377,7 @@ async function regsView() {
     const { error } = await sb.from('registrations').update({ [sel.dataset.field]: val }).eq('id', id);
     toast(error ? 'Could not update that registration.' : 'Updated.', !error);
   });
- 
+
   document.getElementById('export').onclick = () => {
     const cols = ['created_at', 'first_name', 'last_name', 'email', 'phone', 'position', 'jersey_number', 'shirt_size', 'division', 'emergency_name', 'emergency_phone', 'payment_status', 'status', 'notes'];
     const csv = [cols.join(',')].concat((regs || []).map(r =>
@@ -388,13 +388,13 @@ async function regsView() {
     a.click();
   };
 }
- 
+
 /* ================= 3. Schedule ================= */
 async function schedView() {
   const { data: games } = await sb.from('games').select('*, home:home_team_id(name), away:away_team_id(name)').order('starts_at');
   const { data: teams } = await sb.from('teams').select('id,name,division').order('name');
   const opts = (sel) => (teams || []).map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
- 
+
   mount(`
     <h2 class="display text-2xl mb-5">Schedule</h2>
     <div class="panel p-5 mb-6">
@@ -417,7 +417,7 @@ async function schedView() {
       <p class="text-xs text-gray-500 mt-2">Repeating creates the same matchup at the same time on following weeks — useful for a
         fixed ice slot. Edit or delete any of them below.</p>
     </div>
- 
+
     <div class="panel overflow-x-auto">
       <table class="grid-table">
         <thead><tr><th>Date &amp; time</th><th>Away</th><th>Home</th><th>Score</th><th>Division</th><th>Venue</th><th>Status</th><th></th></tr></thead>
@@ -443,7 +443,7 @@ async function schedView() {
         </tbody>
       </table>
     </div>`);
- 
+
   document.getElementById('add-game').onclick = async () => {
     const when = document.getElementById('n-when').value;
     if (!when) return toast('Pick a date and time.', false);
@@ -464,7 +464,7 @@ async function schedView() {
     toast(weeks > 1 ? `${weeks} games added.` : 'Game added.');
     schedView();
   };
- 
+
   document.getElementById('view').addEventListener('change', async e => {
     const f = e.target.closest('[data-f]'); if (!f) return;
     const id = f.closest('tr').dataset.id;
@@ -476,7 +476,7 @@ async function schedView() {
     const { error } = await sb.from('games').update({ [key]: val }).eq('id', id);
     toast(error ? 'Not saved.' : 'Saved.', !error);
   });
- 
+
   document.getElementById('view').addEventListener('click', async e => {
     const sheet = e.target.closest('[data-sheet]');
     if (sheet) {
@@ -492,12 +492,12 @@ async function schedView() {
     schedView();
   });
 }
- 
+
 /* ================= 4. Teams & rosters ================= */
 async function teamsView() {
   const { data: teams } = await sb.from('teams').select('*').order('division').order('name');
   const { data: players } = await sb.from('players').select('*').order('jersey_number');
- 
+
   mount(`
     <h2 class="display text-2xl mb-5">Teams &amp; rosters</h2>
     <div class="panel p-5 mb-6">
@@ -510,7 +510,7 @@ async function teamsView() {
       </div>
       <button id="add-team" class="btn btn-primary mt-3">Add team</button>
     </div>
- 
+
     ${(teams || []).map(t => `
       <div class="panel mb-4 overflow-hidden" data-team="${t.id}">
         <div class="p-4 flex flex-wrap items-center gap-3" style="background:${esc(t.colour)};color:#fff">
@@ -543,7 +543,7 @@ async function teamsView() {
           <button data-addp="${t.id}" class="btn btn-quiet whitespace-nowrap">Add player</button>
         </div>
       </div>`).join('')}`);
- 
+
   document.getElementById('add-team').onclick = async () => {
     const name = document.getElementById('t-name').value.trim();
     if (!name) return toast('Give the team a name.', false);
@@ -554,7 +554,7 @@ async function teamsView() {
     });
     teamsView();
   };
- 
+
   document.getElementById('view').addEventListener('change', async e => {
     const tf = e.target.closest('[data-tf]');
     if (tf) {
@@ -570,7 +570,7 @@ async function teamsView() {
       toast(error ? 'Not saved.' : 'Saved.', !error);
     }
   });
- 
+
   document.getElementById('view').addEventListener('click', async e => {
     const addp = e.target.closest('[data-addp]');
     if (addp) {
@@ -596,38 +596,82 @@ async function teamsView() {
     teamsView();
   });
 }
- 
+
 /* ================= 5. Pages (the GoDaddy-style editor) ========= */
 async function pagesView() {
   const { data: rows } = await sb.from('site_content').select('*').order('sort');
- 
+  const PAGES = [
+    ['index.html', 'Home'], ['schedule.html', 'Schedule'], ['standings.html', 'Standings'],
+    ['teams.html', 'Teams'], ['register.html', 'Register'], ['live.html', 'Live scores']
+  ];
+
   mount(`
     <h2 class="display text-2xl mb-1">Pages</h2>
-    <p class="text-sm text-gray-600 mb-5 max-w-2xl">Every editable piece of text, imagery, and colour on the public site. Change it here and save —
-      the website updates for everyone on their next page load. The colour swatches near the bottom recolour the green/gold sections site-wide.</p>
-    <div class="grid gap-3 max-w-3xl">
-      ${(rows || []).map(r => `
-        <div class="panel p-4" data-key="${esc(r.key)}">
-          <div class="flex items-baseline justify-between mb-2">
-            <label class="label !mb-0" for="k-${esc(r.key)}">${esc(r.label || r.key)}</label>
-            <span class="text-[11px] text-gray-400">${esc(r.key)}</span>
-          </div>
-          ${r.kind === 'longtext'
-            ? `<textarea id="k-${esc(r.key)}" rows="3" class="field">${esc(r.value ?? '')}</textarea>`
-            : r.kind === 'color'
-            ? `<input id="k-${esc(r.key)}" type="color" class="field !p-1 h-11 !w-28" value="${esc(r.value || '#09522B')}">`
-            : `<input id="k-${esc(r.key)}" class="field" value="${esc(r.value ?? '')}" ${r.kind === 'image' ? 'placeholder="Image URL"' : ''}>`}
-          ${r.kind === 'image' && r.value ? `<img src="${esc(r.value)}" alt="" class="h-24 mt-3 rounded object-cover">` : ''}
-        </div>`).join('')}
-    </div>
-    <div class="flex items-center gap-3 mt-5">
-      <button id="save-content" class="btn btn-primary">Save changes</button>
-      <button id="upload" class="btn btn-quiet">Upload an image</button>
-      <input id="file" type="file" accept="image/*" class="hidden">
-    </div>
-    <p class="text-xs text-gray-500 mt-3 max-w-2xl">Images upload to the <code>media</code> storage bucket and give you a public URL —
-      paste it into any image field above, a team logo, or an announcement.</p>`);
- 
+    <p class="text-sm text-gray-600 mb-5 max-w-3xl">Every editable piece of text, imagery, and colour on the public site.
+      The preview on the right updates as you type — nothing is public until you click "Save changes".</p>
+
+    <div class="grid lg:grid-cols-[1fr,1.1fr] gap-6 items-start">
+      <div>
+        <div class="grid gap-3">
+          ${(rows || []).map(r => `
+            <div class="panel p-4" data-key="${esc(r.key)}">
+              <div class="flex items-baseline justify-between mb-2">
+                <label class="label !mb-0" for="k-${esc(r.key)}">${esc(r.label || r.key)}</label>
+                <span class="text-[11px] text-gray-400">${esc(r.key)}</span>
+              </div>
+              ${r.kind === 'longtext'
+                ? `<textarea id="k-${esc(r.key)}" rows="3" class="field">${esc(r.value ?? '')}</textarea>`
+                : r.kind === 'color'
+                ? `<input id="k-${esc(r.key)}" type="color" class="field !p-1 h-11 !w-28" value="${esc(r.value || '#09522B')}">`
+                : `<input id="k-${esc(r.key)}" class="field" value="${esc(r.value ?? '')}" ${r.kind === 'image' ? 'placeholder="Image URL"' : ''}>`}
+              ${r.kind === 'image' && r.value ? `<img src="${esc(r.value)}" alt="" class="h-24 mt-3 rounded object-cover">` : ''}
+            </div>`).join('')}
+        </div>
+        <div class="flex items-center gap-3 mt-5">
+          <button id="save-content" class="btn btn-primary">Save changes</button>
+          <button id="upload" class="btn btn-quiet">Upload an image</button>
+          <input id="file" type="file" accept="image/*" class="hidden">
+        </div>
+        <p class="text-xs text-gray-500 mt-3 max-w-2xl">Images upload to the <code>media</code> storage bucket and give you a public URL —
+          paste it into any image field above, a team logo, or an announcement.</p>
+      </div>
+
+      <div class="lg:sticky lg:top-6">
+        <div class="flex items-center justify-between mb-2">
+          <div class="rule !mb-0">Live preview</div>
+          <select id="preview-page" class="field !w-40 !py-2 !text-xs">
+            ${PAGES.map(([f, l]) => `<option value="${f}">${l}</option>`).join('')}
+          </select>
+        </div>
+        <iframe id="preview-frame" src="index.html" title="Live preview"
+          class="w-full rounded-md" style="height:75vh;border:1px solid var(--line)"></iframe>
+        <p class="text-xs text-gray-500 mt-2">Only text, images, and colours that appear on the page you've selected will change here —
+          e.g. the hero fields won't show on the Schedule page.</p>
+      </div>
+    </div>`);
+
+  /* ---- live preview: mirror unsaved field values into the iframe ---- */
+  const THEME_VARS = { 'theme.ivy': '--ivy', 'theme.ivy_deep': '--ivy-deep', 'theme.brass': '--brass', 'theme.sprig': '--ivy-sprig' };
+  function syncPreview() {
+    const doc = document.getElementById('preview-frame')?.contentDocument;
+    if (!doc) return;
+    document.querySelectorAll('[data-key]').forEach(row => {
+      const key = row.dataset.key;
+      const val = row.querySelector('input, textarea').value;
+      if (THEME_VARS[key]) { doc.documentElement.style.setProperty(THEME_VARS[key], val); return; }
+      doc.querySelectorAll(`[data-cms="${CSS.escape(key)}"]`).forEach(el => { el.innerHTML = esc(val).replace(/\n/g, '<br>'); });
+      doc.querySelectorAll(`[data-cms-src="${CSS.escape(key)}"]`).forEach(el => { if (val) el.src = val; });
+      doc.querySelectorAll(`[data-cms-href="${CSS.escape(key)}"]`).forEach(el => { if (val) el.href = val; });
+    });
+  }
+  const frame = document.getElementById('preview-frame');
+  frame.addEventListener('load', () => {
+    try { frame.contentWindow.document.addEventListener('ivy:ready', syncPreview); } catch (e) {}
+    syncPreview();
+  });
+  document.getElementById('preview-page').addEventListener('change', e => { frame.src = e.target.value; });
+  document.getElementById('view').addEventListener('input', syncPreview);
+
   document.getElementById('save-content').onclick = async () => {
     const updates = [...document.querySelectorAll('[data-key]')].map(d => ({
       key: d.dataset.key, value: d.querySelector('input, textarea').value
@@ -635,7 +679,7 @@ async function pagesView() {
     const { error } = await sb.from('site_content').upsert(updates.map(u => ({ ...u, updated_at: new Date().toISOString() })));
     toast(error ? 'Changes did not save.' : 'Website updated.', !error);
   };
- 
+
   document.getElementById('upload').onclick = () => document.getElementById('file').click();
   document.getElementById('file').onchange = async e => {
     const file = e.target.files[0]; if (!file) return;
@@ -646,17 +690,17 @@ async function pagesView() {
     prompt('Image uploaded. Copy this URL:', data.publicUrl);
   };
 }
- 
+
 /* ================= 5b. Photos (section image galleries) ======== */
 async function photosView() {
   const { data: imgs } = await sb.from('gallery_images').select('*').order('section').order('sort');
   const sections = [...new Set((imgs || []).map(g => g.section))];
- 
+
   mount(`
     <h2 class="display text-2xl mb-1">Photos</h2>
     <p class="text-sm text-gray-600 mb-5 max-w-2xl">Add photos to a section of the site, then use the arrows to reorder them.
       "home" is the photo strip near the bottom of the home page.</p>
- 
+
     <div class="panel p-5 mb-6 max-w-3xl">
       <div class="rule mb-3">Add a photo</div>
       <div class="grid md:grid-cols-[1fr,2fr,auto] gap-3">
@@ -668,7 +712,7 @@ async function photosView() {
       <input id="g-file" type="file" accept="image/*" class="hidden">
       <button id="add-photo" class="btn btn-primary mt-3">Add photo</button>
     </div>
- 
+
     ${sections.length ? sections.map(sec => `
       <div class="mb-8 max-w-3xl">
         <div class="rule mb-3">${esc(sec)}</div>
@@ -683,7 +727,7 @@ async function photosView() {
             </div>`).join('')}
         </div>
       </div>`).join('') : '<p class="text-sm text-gray-500 max-w-3xl">No photos yet — add one above.</p>'}`);
- 
+
   document.getElementById('g-upload').onclick = () => document.getElementById('g-file').click();
   document.getElementById('g-file').onchange = async e => {
     const file = e.target.files[0]; if (!file) return;
@@ -694,7 +738,7 @@ async function photosView() {
     document.getElementById('g-url').value = data.publicUrl;
     toast('Uploaded — click "Add photo" to place it.');
   };
- 
+
   document.getElementById('add-photo').onclick = async () => {
     const section = document.getElementById('g-section').value.trim() || 'home';
     const url = document.getElementById('g-url').value.trim();
@@ -706,7 +750,7 @@ async function photosView() {
     if (error) return toast('Could not add that photo.', false);
     photosView();
   };
- 
+
   document.getElementById('view').addEventListener('click', async e => {
     const del = e.target.closest('[data-delg]');
     if (del) {
@@ -731,15 +775,15 @@ async function photosView() {
     }
   });
 }
- 
+
 /* ================= 6. Payment links ================= */
 let paymentsUnlocked = false;
- 
+
 async function payView() {
   if (!paymentsUnlocked) return payLockView();
   await payViewInner();
 }
- 
+
 function payLockView() {
   mount(`
     <div class="max-w-sm">
@@ -751,7 +795,7 @@ function payLockView() {
       <button id="pin-go" class="btn btn-primary mt-3 w-full">Unlock</button>
       <p id="pin-msg" class="text-sm text-red-700 mt-2 hidden"></p>
     </div>`);
- 
+
   const go = async () => {
     const pin = document.getElementById('pin-input').value;
     const { data, error } = await sb.rpc('check_payments_pin', { candidate: pin });
@@ -766,10 +810,10 @@ function payLockView() {
   document.getElementById('pin-go').onclick = go;
   document.getElementById('pin-input').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 }
- 
+
 async function payViewInner() {
   const { data: links } = await sb.from('payment_links').select('*').order('sort');
- 
+
   mount(`
     <div class="flex flex-wrap items-center justify-between gap-3 mb-1">
       <h2 class="display text-2xl">Payment links</h2>
@@ -788,7 +832,7 @@ async function payViewInner() {
       </div>
       <button id="add-link" class="btn btn-primary mt-3">Add link</button>
     </div>
- 
+
     <div class="grid gap-3 max-w-3xl">
       ${(links || []).map(l => `
         <div class="panel p-4 grid md:grid-cols-2 gap-3" data-link="${l.id}">
@@ -800,14 +844,14 @@ async function payViewInner() {
           <div class="text-right"><button data-dell="${l.id}" class="text-xs text-red-700 hover:underline">Delete link</button></div>
         </div>`).join('') || '<p class="text-sm text-gray-500">No payment links yet.</p>'}
     </div>`);
- 
+
   document.getElementById('set-pin').onclick = async () => {
     const pin = prompt('Set a new payments PIN (share it only with people you trust to edit Stripe links):');
     if (!pin) return;
     const { error } = await sb.rpc('set_payments_pin', { new_pin: pin });
     toast(error ? 'Could not set the PIN — are you signed in as an admin?' : 'PIN updated.', !error);
   };
- 
+
   document.getElementById('add-link').onclick = async () => {
     const url = document.getElementById('p-url').value.trim();
     if (!url.startsWith('http')) return toast('Paste the full Stripe URL.', false);
@@ -818,7 +862,7 @@ async function payViewInner() {
     });
     payView();
   };
- 
+
   document.getElementById('view').addEventListener('change', async e => {
     const f = e.target.closest('[data-lf]'); if (!f) return;
     const id = f.closest('[data-link]').dataset.link;
@@ -826,7 +870,7 @@ async function payViewInner() {
     const { error } = await sb.from('payment_links').update({ [f.dataset.lf]: val }).eq('id', id);
     toast(error ? 'Not saved.' : 'Saved.', !error);
   });
- 
+
   document.getElementById('view').addEventListener('click', async e => {
     const b = e.target.closest('[data-dell]'); if (!b) return;
     if (!confirm('Delete this payment link?')) return;
@@ -834,11 +878,11 @@ async function payViewInner() {
     payView();
   });
 }
- 
+
 /* ================= 7. News ================= */
 async function newsView() {
   const { data: items } = await sb.from('announcements').select('*').order('published_at', { ascending: false });
- 
+
   mount(`
     <h2 class="display text-2xl mb-5">News &amp; announcements</h2>
     <div class="panel p-5 mb-6 max-w-3xl">
@@ -853,7 +897,7 @@ async function newsView() {
       </div>
       <button id="add-news" class="btn btn-primary mt-3">Publish</button>
     </div>
- 
+
     <div class="grid gap-3 max-w-3xl">
       ${(items || []).map(n => `
         <div class="panel p-4 flex items-start gap-4" data-news="${n.id}">
@@ -869,7 +913,7 @@ async function newsView() {
           </div>
         </div>`).join('') || '<p class="text-sm text-gray-500">Nothing posted yet.</p>'}
     </div>`);
- 
+
   document.getElementById('add-news').onclick = async () => {
     const title = document.getElementById('a-title').value.trim();
     if (!title) return toast('Give it a headline.', false);
@@ -880,13 +924,13 @@ async function newsView() {
     });
     newsView();
   };
- 
+
   document.getElementById('view').addEventListener('change', async e => {
     const f = e.target.closest('[data-nf]'); if (!f) return;
     await sb.from('announcements').update({ published: f.checked }).eq('id', f.closest('[data-news]').dataset.news);
     toast('Updated.');
   });
- 
+
   document.getElementById('view').addEventListener('click', async e => {
     const b = e.target.closest('[data-deln]'); if (!b) return;
     if (!confirm('Delete this announcement?')) return;
