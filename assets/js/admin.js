@@ -38,7 +38,9 @@ document.getElementById('login-form').addEventListener('submit', async e => {
 
 document.getElementById('signout').addEventListener('click', async () => { await sb.auth.signOut(); location.reload(); });
 
-sb.auth.onAuthStateChange(async (_e, session) => { if (session) boot(session); });
+sb.auth.onAuthStateChange(async (_e, session) => {
+  if (session && (!me || me.id !== session.user.id)) boot(session);
+});
 sb.auth.getSession().then(({ data }) => { if (data.session) boot(data.session); });
 
 async function boot(session) {
