@@ -171,8 +171,8 @@ document.addEventListener('ivy:ready', async () => {
         <div class="p-5">
           <p class="text-xs text-gray-500">${fmtDate(n.published_at)}</p>
           <h3 class="display text-xl mt-2">${esc(n.title)}</h3>
-          <p class="serif text-[#33463C] mt-2 text-[.95rem] leading-relaxed">${esc(n.body ?? '').slice(0, 180)}</p>
-          ${n.link_url ? `<a href="${esc(n.link_url)}" class="text-sm font-semibold mt-3 inline-block" style="color:var(--ivy)">Read on</a>` : ''}
+          <p class="serif text-[#33463C] mt-2 text-[.95rem] leading-relaxed">${esc((n.body ?? '').slice(0, 180))}${(n.body ?? '').length > 180 ? '…' : ''}</p>
+          <a href="${n.link_url ? esc(n.link_url) : `news.html?id=${n.id}`}" class="text-sm font-semibold mt-3 inline-block" style="color:var(--ivy)">Read on</a>
         </div>
       </article>`).join('');
   }
