@@ -19,7 +19,7 @@
   </div>
 </section>
 
-<section class="shell pt-10">
+<section class="shell pt-10" id="steps">
   <div class="panel-deep p-6 grid gap-5 max-w-xl">
     <div class="flex items-start gap-4">
       <span class="display text-2xl w-8 shrink-0" style="color:var(--brass-soft)">1</span>
@@ -109,23 +109,66 @@
 document.addEventListener('ivy:ready', async () => {
   const { esc } = window.Ivy;
 
-  /* Divisions and teams straight from the database. */
-  const { data: teams } = await sb.from('teams').select('id,name,division,roster_cap').order('name');
-  const divisions = [...new Set((teams || []).map(t => t.division))];
-  document.getElementById('division').insertAdjacentHTML('beforeend',
-    divisions.map(d => `<option>${esc(d)}</option>`).join(''));
+  /* One-off event mode: if an admin has filled in an override in the
+     Payments tab, show that instead of the normal hockey sign-up form. */
+  const { data: ov } = await sb.from('site_content').select('value').eq('key', 'register.override').maybeSingle();
+  const override = ov?.value?.trim();
 
-  const teamSel = document.getElementById('team_id');
-  function fillTeams() {
-    const d = document.getElementById('division').value;
-    const list = (teams || []).filter(t => !d || t.division === d);
-    teamSel.innerHTML = `<option value="">Place me wherever there's room</option>` +
-      list.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  if (override) {
+    document.getElementById('steps').remove();
+    const paragraphs = override.split(/\n\s*\n/).filter(t => t.trim())
+      .map(t => `<p class="mb-4">${esc(t).replace(/\n/g, '<br>')}</p>`).join('');
+    document.getElementById('reg-form').outerHTML =
+      `<div class="panel p-6 md:p-8 serif text-lg leading-relaxed">${paragraphs}</div>`;
+  } else {
+    /* Divisions and teams straight from the database. */
+    const { data: teams } = await sb.from('teams').select('id,name,division,roster_cap').order('name');
+    const divisions = [...new Set((teams || []).map(t => t.division))];
+    document.getElementById('division').insertAdjacentHTML('beforeend',
+      divisions.map(d => `<option>${esc(d)}</option>`).join(''));
+
+    const teamSel = document.getElementById('team_id');
+    function fillTeams() {
+      const d = document.getElementById('division').value;
+      const list = (teams || []).filter(t => !d || t.division === d);
+      teamSel.innerHTML = `<option value="">Place me wherever there's room</option>` +
+        list.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+    }
+    document.getElementById('division').addEventListener('change', fillTeams);
+    fillTeams();
+
+    /* Submit */
+    document.getElementById('reg-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('submit-btn');
+      const msg = document.getElementById('form-msg');
+      btn.disabled = true; btn.textContent = 'Saving…';
+
+      const f = new FormData(e.target);
+      const row = Object.fromEntries(f.entries());
+      row.jersey_number = row.jersey_number ? parseInt(row.jersey_number, 10) : null;
+      row.team_id = row.team_id || null;
+      row.waiver_accepted = document.getElementById('waiver').checked;
+
+      const { error } = await sb.from('registrations').insert(row);
+      msg.classList.remove('hidden');
+
+      if (error) {
+        msg.className = 'text-sm text-red-700';
+        msg.textContent = 'That did not save. Check your email address and try again, or email ' + window.IVY_CONFIG.CONTACT_EMAIL + '.';
+        btn.disabled = false; btn.textContent = 'Save my details';
+        return;
+      }
+
+      msg.className = 'text-sm font-semibold';
+      msg.style.color = 'var(--ivy)';
+      msg.textContent = 'Saved. Last step: pay through the Stripe link for your division on the right.';
+      btn.textContent = 'Details saved';
+      document.getElementById('pay-links').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   }
-  document.getElementById('division').addEventListener('change', fillTeams);
-  fillTeams();
 
-  /* Stripe links, editable in the admin portal. */
+  /* Stripe links, editable in the admin portal. Shown either way. */
   const { data: links } = await sb.from('payment_links').select('*').eq('active', true).order('sort');
   document.getElementById('pay-links').innerHTML = (links || []).length
     ? links.map(l => `
@@ -136,36 +179,6 @@ document.addEventListener('ivy:ready', async () => {
         <a href="${esc(l.url)}" target="_blank" rel="noopener" class="btn btn-brass w-full mt-4">Pay with Stripe</a>
       </div>`).join('')
     : `<div class="panel p-5"><p class="text-sm text-gray-600">Payment links go live when registration opens. Save your details and we will email you.</p></div>`;
-
-  /* Submit */
-  document.getElementById('reg-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('submit-btn');
-    const msg = document.getElementById('form-msg');
-    btn.disabled = true; btn.textContent = 'Saving…';
-
-    const f = new FormData(e.target);
-    const row = Object.fromEntries(f.entries());
-    row.jersey_number = row.jersey_number ? parseInt(row.jersey_number, 10) : null;
-    row.team_id = row.team_id || null;
-    row.waiver_accepted = document.getElementById('waiver').checked;
-
-    const { error } = await sb.from('registrations').insert(row);
-    msg.classList.remove('hidden');
-
-    if (error) {
-      msg.className = 'text-sm text-red-700';
-      msg.textContent = 'That did not save. Check your email address and try again, or email ' + window.IVY_CONFIG.CONTACT_EMAIL + '.';
-      btn.disabled = false; btn.textContent = 'Save my details';
-      return;
-    }
-
-    msg.className = 'text-sm font-semibold';
-    msg.style.color = 'var(--ivy)';
-    msg.textContent = 'Saved. Last step: pay through the Stripe link for your division on the right.';
-    btn.textContent = 'Details saved';
-    document.getElementById('pay-links').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
 });
 </script>
 </body>
