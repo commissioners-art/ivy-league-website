@@ -57,7 +57,7 @@ async function boot(session) {
   document.getElementById('who').textContent = `${staff.full_name || staff.email} · ${staff.role}`;
 
   const tabs = me.role === 'admin'
-    ? [['score', 'Scorekeeping'], ['regs', 'Registrations'], ['sched', 'Schedule'], ['teams', 'Teams & rosters'], ['pages', 'Pages'], ['photos', 'Photos'], ['pay', 'Payments'], ['news', 'News']]
+    ? [['score', 'Scorekeeping'], ['regs', 'Registrations'], ['sched', 'Schedule'], ['teams', 'Teams & rosters'], ['pages', 'Pages'], ['morepages', 'More Pages'], ['photos', 'Photos'], ['pay', 'Payments'], ['news', 'News']]
     : [['score', 'Scorekeeping']];
 
   document.getElementById('tabs').innerHTML = tabs.map(([k, l]) =>
@@ -74,7 +74,7 @@ function render() {
   document.querySelectorAll('#tabs [data-tab]').forEach(b => {
     b.className = `px-4 py-2 text-sm font-semibold rounded-sm whitespace-nowrap ${b.dataset.tab === view ? 'bg-white/20 text-white' : 'text-white/65 hover:text-white'}`;
   });
-  ({ score: scoreView, regs: regsView, sched: schedView, teams: teamsView, pages: pagesView, photos: photosView, pay: payView, news: newsView }[view])();
+  ({ score: scoreView, regs: regsView, sched: schedView, teams: teamsView, pages: pagesView, morepages: morePagesView, photos: photosView, pay: payView, news: newsView }[view])();
 }
 
 const mount = html => {
@@ -400,7 +400,9 @@ async function regsView() {
 async function schedView() {
   const { data: games } = await sb.from('games').select('*, home:home_team_id(name), away:away_team_id(name)').order('starts_at');
   const { data: teams } = await sb.from('teams').select('id,name,division').order('name');
+  const { data: divisions } = await sb.from('divisions').select('*').order('sort').order('name');
   const opts = (sel) => (teams || []).map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+  const divOpts = (sel) => (divisions || []).map(d => `<option ${d.name === sel ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
 
   mount(`
     <h2 class="display text-2xl mb-5">Schedule</h2>
@@ -410,7 +412,7 @@ async function schedView() {
         <select id="n-away" class="field"><option value="">Away team</option>${opts()}</select>
         <select id="n-home" class="field"><option value="">Home team</option>${opts()}</select>
         <input id="n-when" type="datetime-local" class="field">
-        <input id="n-div" class="field" placeholder="Division">
+        <select id="n-div" class="field"><option value="">Division</option>${divOpts()}</select>
         <input id="n-venue" class="field" placeholder="Venue" value="${esc(IVY_CONFIG.VENUE)}">
       </div>
       <div class="flex flex-wrap items-center gap-3 mt-3">
@@ -422,7 +424,7 @@ async function schedView() {
         </label>
       </div>
       <p class="text-xs text-gray-500 mt-2">Repeating creates the same matchup at the same time on following weeks — useful for a
-        fixed ice slot. Edit or delete any of them below.</p>
+        fixed ice slot. Edit or delete any of them below. Divisions are managed in the Teams &amp; rosters tab.</p>
     </div>
 
     <div class="panel overflow-x-auto">
@@ -437,7 +439,7 @@ async function schedView() {
               <input type="number" min="0" class="field !py-1 !text-xs !w-14" data-f="away_score" value="${g.away_score}">
               <input type="number" min="0" class="field !py-1 !text-xs !w-14" data-f="home_score" value="${g.home_score}">
             </td>
-            <td><input class="field !py-1 !text-xs !w-28" data-f="division" value="${esc(g.division ?? '')}"></td>
+            <td><select class="field !py-1 !text-xs !w-28" data-f="division"><option value="">—</option>${divOpts(g.division)}</select></td>
             <td><input class="field !py-1 !text-xs" data-f="venue" value="${esc(g.venue ?? '')}"></td>
             <td><select class="field !py-1 !text-xs" data-f="status">
               ${['scheduled', 'live', 'final', 'postponed'].map(s => `<option ${s === g.status ? 'selected' : ''}>${s}</option>`).join('')}
@@ -504,14 +506,34 @@ async function schedView() {
 async function teamsView() {
   const { data: teams } = await sb.from('teams').select('*').order('division').order('name');
   const { data: players } = await sb.from('players').select('*').order('jersey_number');
+  const { data: divisions } = await sb.from('divisions').select('*').order('sort').order('name');
+  const divOpts = sel => (divisions || []).map(d => `<option ${d.name === sel ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
 
   mount(`
     <h2 class="display text-2xl mb-5">Teams &amp; rosters</h2>
+
+    <div class="panel p-5 mb-6 max-w-2xl">
+      <div class="rule mb-3">Divisions</div>
+      <div class="grid gap-2 mb-3">
+        ${(divisions || []).map(d => `
+          <div class="flex items-center gap-2" data-division="${d.id}">
+            <input class="field !py-1 !text-sm flex-1" data-df="name" value="${esc(d.name)}">
+            <button data-deldiv="${d.id}" class="text-xs text-red-700 hover:underline whitespace-nowrap">Delete</button>
+          </div>`).join('') || '<p class="text-sm text-gray-500">No divisions yet — add one below.</p>'}
+      </div>
+      <div class="flex gap-2">
+        <input id="nd-name" class="field" placeholder="New division — e.g. Lager">
+        <button id="add-division" class="btn btn-quiet whitespace-nowrap">Add division</button>
+      </div>
+      <p class="text-xs text-gray-500 mt-2">These are the options offered for a team's division below, and for a game's division in the Schedule tab.
+        Renaming one here does not rename it on teams already using the old name.</p>
+    </div>
+
     <div class="panel p-5 mb-6">
       <div class="rule mb-3">Add a team</div>
       <div class="grid md:grid-cols-4 gap-3">
         <input id="t-name" class="field" placeholder="Team name">
-        <input id="t-div" class="field" placeholder="Division">
+        <select id="t-div" class="field"><option value="">Choose a division</option>${divOpts()}</select>
         <input id="t-colour" type="color" class="field !p-1 h-11" value="#09522B">
         <input id="t-logo" class="field" placeholder="Logo image URL">
       </div>
@@ -522,7 +544,7 @@ async function teamsView() {
       <div class="panel mb-4 overflow-hidden" data-team="${t.id}">
         <div class="p-4 flex flex-wrap items-center gap-3" style="background:${esc(t.colour)};color:#fff">
           <input class="field !py-1 !w-56 !text-sm !text-black" data-tf="name" value="${esc(t.name)}">
-          <input class="field !py-1 !w-36 !text-sm !text-black" data-tf="division" value="${esc(t.division)}">
+          <select class="field !py-1 !w-36 !text-sm !text-black" data-tf="division">${divOpts(t.division)}</select>
           <input class="field !py-1 !w-64 !text-sm !text-black" data-tf="logo_url" value="${esc(t.logo_url ?? '')}" placeholder="Logo URL">
           <span class="text-xs text-white/70 ml-auto">${(players || []).filter(p => p.team_id === t.id).length} players</span>
         </div>
@@ -562,12 +584,26 @@ async function teamsView() {
     teamsView();
   };
 
+  document.getElementById('add-division').onclick = async () => {
+    const name = document.getElementById('nd-name').value.trim();
+    if (!name) return toast('Give the division a name.', false);
+    const { error } = await sb.from('divisions').insert({ name });
+    if (error) return toast(error.message.includes('duplicate') ? 'That division already exists.' : 'Could not add it.', false);
+    teamsView();
+  };
+
   document.getElementById('view').addEventListener('change', async e => {
     const tf = e.target.closest('[data-tf]');
     if (tf) {
       const id = tf.closest('[data-team]').dataset.team;
       const { error } = await sb.from('teams').update({ [tf.dataset.tf]: tf.value }).eq('id', id);
       return toast(error ? 'Not saved.' : 'Saved.', !error);
+    }
+    const df = e.target.closest('[data-df]');
+    if (df) {
+      const id = df.closest('[data-division]').dataset.division;
+      const { error } = await sb.from('divisions').update({ name: df.value.trim() }).eq('id', id);
+      return toast(error ? 'Could not rename — that name may already exist.' : 'Saved.', !error);
     }
     const pf = e.target.closest('[data-pf]');
     if (pf) {
@@ -579,6 +615,12 @@ async function teamsView() {
   });
 
   document.getElementById('view').addEventListener('click', async e => {
+    const deldiv = e.target.closest('[data-deldiv]');
+    if (deldiv) {
+      if (!confirm('Delete this division? Teams already using it keep the name, but it will no longer appear as an option.')) return;
+      await sb.from('divisions').delete().eq('id', deldiv.dataset.deldiv);
+      return teamsView();
+    }
     const addp = e.target.closest('[data-addp]');
     if (addp) {
       const wrap = addp.closest('[data-add-player]');
@@ -787,6 +829,78 @@ async function photosView() {
   });
 }
 
+/* ================= 5c. More Pages (custom one-off pages) ======== */
+async function morePagesView() {
+  const { data: pages } = await sb.from('custom_pages').select('*').order('sort');
+
+  mount(`
+    <h2 class="display text-2xl mb-1">More Pages</h2>
+    <p class="text-sm text-gray-600 mb-5 max-w-2xl">Build a standalone page for a one-off event — a golf tournament, a sponsor page,
+      a rules page — styled like the rest of the site. Each one gets its own link: <code>page.html?slug=your-slug</code>.
+      Share that link directly, or add a button to it somewhere on the site yourself.</p>
+
+    <div class="panel p-5 mb-6 max-w-3xl">
+      <div class="rule mb-3">Create a page</div>
+      <div class="grid md:grid-cols-2 gap-3">
+        <input id="np-title" class="field" placeholder="Title — e.g. Summer Golf Tournament">
+        <input id="np-slug" class="field" placeholder="Slug — e.g. golf-2026 (letters, numbers, dashes)">
+      </div>
+      <button id="np-create" class="btn btn-primary mt-3">Create page</button>
+    </div>
+
+    <div class="grid gap-3 max-w-3xl">
+      ${(pages || []).map(p => `
+        <div class="panel p-4 grid gap-3" data-page="${p.id}">
+          <div class="flex items-center justify-between gap-3">
+            <input class="field !text-base font-semibold flex-1" data-pgf="title" value="${esc(p.title)}">
+            <a href="page.html?slug=${esc(p.slug)}" target="_blank" class="text-xs underline shrink-0">page.html?slug=${esc(p.slug)}</a>
+          </div>
+          <input class="field !text-sm" data-pgf="kicker" placeholder="Kicker line above the title (optional)" value="${esc(p.kicker ?? '')}">
+          <textarea class="field !text-sm" rows="5" data-pgf="body" placeholder="Page content — leave a blank line between paragraphs">${esc(p.body ?? '')}</textarea>
+          <input class="field !text-sm" data-pgf="image_url" placeholder="Image URL (optional)" value="${esc(p.image_url ?? '')}">
+          <div class="flex items-center justify-between">
+            <label class="text-xs flex items-center gap-1"><input type="checkbox" data-pgf="published" ${p.published ? 'checked' : ''}> Published</label>
+            <div class="flex gap-3">
+              <button data-savepage="${p.id}" class="btn btn-quiet !py-1.5 !px-3 !text-xs">Save</button>
+              <button data-delpage="${p.id}" class="text-xs text-red-700 hover:underline">Delete</button>
+            </div>
+          </div>
+        </div>`).join('') || '<p class="text-sm text-gray-500">No custom pages yet.</p>'}
+    </div>`);
+
+  document.getElementById('np-create').onclick = async () => {
+    const title = document.getElementById('np-title').value.trim();
+    const slug = document.getElementById('np-slug').value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    if (!title || !slug) return toast('Give it a title and a slug.', false);
+    const { error } = await sb.from('custom_pages').insert({ title, slug, published: false });
+    if (error) return toast(error.message.includes('duplicate') ? 'That slug is already used.' : 'Could not create the page.', false);
+    toast('Page created — fill it in below, then mark it Published.');
+    morePagesView();
+  };
+
+  document.getElementById('view').addEventListener('click', async e => {
+    const save = e.target.closest('[data-savepage]');
+    if (save) {
+      const row = save.closest('[data-page]');
+      const field = f => row.querySelector(`[data-pgf="${f}"]`);
+      const { error } = await sb.from('custom_pages').update({
+        title: field('title').value.trim(),
+        kicker: field('kicker').value || null,
+        body: field('body').value,
+        image_url: field('image_url').value || null,
+        published: field('published').checked,
+        updated_at: new Date().toISOString()
+      }).eq('id', save.dataset.savepage);
+      toast(error ? 'Could not save.' : 'Saved.', !error);
+      return;
+    }
+    const b = e.target.closest('[data-delpage]'); if (!b) return;
+    if (!confirm('Delete this page? The link will stop working.')) return;
+    await sb.from('custom_pages').delete().eq('id', b.dataset.delpage);
+    morePagesView();
+  });
+}
+
 /* ================= 6. Payment links ================= */
 let paymentsUnlocked = false;
 
@@ -824,6 +938,7 @@ function payLockView() {
 
 async function payViewInner() {
   const { data: links } = await sb.from('payment_links').select('*').order('sort');
+  const { data: ov } = await sb.from('site_content').select('value').eq('key', 'register.override').maybeSingle();
 
   mount(`
     <div class="flex flex-wrap items-center justify-between gap-3 mb-1">
@@ -833,6 +948,17 @@ async function payViewInner() {
     <p class="text-sm text-gray-600 mb-5 max-w-2xl">Create the link in Stripe, paste it here, and it appears on the registration page.
       Add as many links as you need — one per division, per season, or per fee type — using "Add a link" below.
       Untick "Active" to retire a link without deleting it.</p>
+
+    <div class="panel p-5 mb-6 max-w-3xl" style="border-color:var(--brass)">
+      <div class="rule mb-3">Registration page override</div>
+      <p class="text-sm text-gray-600 mb-3">For a one-off event — a golf tournament, a special fundraiser — that shouldn't use the normal
+        hockey sign-up form. Fill this in and the whole registration page switches to showing this text instead (payment links below
+        still show underneath it). Clear it back to empty to restore the normal registration form.</p>
+      <textarea id="reg-override" rows="5" class="field" placeholder="Leave blank for the normal registration form">${esc(ov?.value ?? '')}</textarea>
+      <button id="save-override" class="btn btn-brass mt-3">Save</button>
+      <a href="register.html" target="_blank" class="text-xs underline ml-3">Preview registration page</a>
+    </div>
+
     <div class="panel p-5 mb-6 max-w-3xl">
       <div class="rule mb-3">Add a link</div>
       <div class="grid md:grid-cols-2 gap-3">
@@ -855,6 +981,12 @@ async function payViewInner() {
           <div class="text-right"><button data-dell="${l.id}" class="text-xs text-red-700 hover:underline">Delete link</button></div>
         </div>`).join('') || '<p class="text-sm text-gray-500">No payment links yet.</p>'}
     </div>`);
+
+  document.getElementById('save-override').onclick = async () => {
+    const { error } = await sb.from('site_content')
+      .upsert({ key: 'register.override', value: document.getElementById('reg-override').value, updated_at: new Date().toISOString() });
+    toast(error ? 'Could not save.' : 'Registration page updated.', !error);
+  };
 
   document.getElementById('set-pin').onclick = async () => {
     const pin = prompt('Set a new payments PIN (share it only with people you trust to edit Stripe links):');
