@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css">
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="crest-field text-white py-12" id="hero">
+  <div class="shell">
+    <p class="text-sm text-white/70 mb-3" id="kicker"></p>
+    <h1 class="display text-[clamp(2rem,5vw,3.4rem)]" id="title">Loading…</h1>
+  </div>
+</section>
+
+<section class="shell py-12 max-w-3xl" id="content"></section>
+
+<footer id="site-footer"></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/conrad.js"></script>
+<script>
+document.addEventListener('ivy:ready', async () => {
+  const { esc } = window.Ivy;
+  const slug = new URLSearchParams(location.search).get('slug');
+  const content = document.getElementById('content');
+
+  if (!slug) { content.innerHTML = '<p class="text-sm text-gray-500">No page specified.</p>'; return; }
+
+  const { data: p } = await sb.from('custom_pages').select('*').eq('slug', slug).eq('published', true).maybeSingle();
+  if (!p) { content.innerHTML = '<p class="text-sm text-gray-500">That page could not be found.</p>'; return; }
+
+  document.title = `${p.title} — Milton Ivy League`;
+  document.getElementById('title').textContent = p.title;
+  if (p.kicker) document.getElementById('kicker').textContent = p.kicker;
+
+  const paragraphs = (p.body ?? '').split(/\n\s*\n/).filter(t => t.trim())
+    .map(t => `<p class="mb-4">${esc(t).replace(/\n/g, '<br>')}</p>`).join('');
+
+  content.innerHTML = `
+    ${p.image_url ? `<img src="${esc(p.image_url)}" alt="" class="w-full rounded-md mb-8 object-cover" style="max-height:26rem">` : ''}
+    <div class="serif text-[#243b30] text-lg leading-relaxed">${paragraphs || ''}</div>`;
+});
+</script>
+</body>
+</html>
