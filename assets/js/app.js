@@ -46,12 +46,7 @@ window.Ivy = { fmtDate, fmtTime, fmtClock, liveClockSeconds, ordinal, esc, TZ };
    Any element with data-cms="hero.title" has its text replaced by
    the matching row in site_content. Images use data-cms-src.
 ----------------------------------------------------------------*/
-async function applyContent() {
-  const { data } = await sb.from('site_content').select('key, value');
-  if (!data) return;
-  const map = Object.fromEntries(data.map(r => [r.key, r.value]));
-  window.IVY_CONTENT = map;
-
+function fillContent(map) {
   document.querySelectorAll('[data-cms]').forEach(el => {
     const v = map[el.dataset.cms];
     if (v != null && v !== '') el.innerHTML = esc(v).replace(/\n/g, '<br>');
@@ -64,8 +59,24 @@ async function applyContent() {
     const v = map[el.dataset.cmsHref];
     if (v) el.href = v;
   });
-
   applyTheme(map);
+}
+
+const reveal = () => window.IVY_REVEAL && window.IVY_REVEAL();
+
+/* Content saved on the last visit, so edits show instantly instead of
+   flashing the template first. Refreshed from Supabase on every load. */
+function cachedContent() {
+  try { return JSON.parse(localStorage.getItem('ivy.content') || 'null'); } catch (e) { return null; }
+}
+
+async function applyContent() {
+  const { data, error } = await sb.from('site_content').select('key, value');
+  if (error || !data) throw error || new Error('no content');
+  const map = Object.fromEntries(data.map(r => [r.key, r.value]));
+  window.IVY_CONTENT = map;
+  try { localStorage.setItem('ivy.content', JSON.stringify(map)); } catch (e) {}
+  fillContent(map);
 }
 
 /* ---------- section colours -------------------------------------
@@ -174,7 +185,10 @@ function chrome() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   chrome();
-  try { await applyContent(); } catch (e) { console.warn('Content load skipped:', e.message); }
+  const cached = cachedContent();
+  if (cached) { window.IVY_CONTENT = cached; fillContent(cached); reveal(); }
+  try { await applyContent(); } catch (e) { console.warn('Content load skipped:', e?.message); }
+  reveal();
   try { await applyGalleries(); } catch (e) { console.warn('Gallery load skipped:', e.message); }
   document.dispatchEvent(new CustomEvent('ivy:ready'));
 });
