@@ -330,11 +330,62 @@
     return `Latest from the league:\n${list(d.news.map(n => `[${n.title}](news.html?id=${n.id})`))}`;
   }
 
+  /* ---------- small talk ----------
+     Short, in-character replies to chit-chat, each with a nudge back
+     toward something useful. pick() varies the wording. */
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const GREET_RE = /^\s*(?:(?:dude|bro|man|ok(?:ay)?|so|conrad)[\s,!]+)?(hi+|hey+|hello+|howdy|yo+|sup|wass?up|what'?s ?up|whats good|hiya|g'?day|good (morning|afternoon|evening|day)|greetings|evening|morning)\b[\s,!.?]*(there|dude|bro|man|buddy|pal|mate|conrad|guys|all|everyone)?\b[\s,!.?]*/i;
+
+  function smallTalk(text) {
+    const t = text.toLowerCase().replace(/[^a-z' ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const teamName = rememberedTeamName();
+    const nudge = teamName
+      ? pick([`Want to know when ${teamName} play next?`, `Shall I check on ${teamName}?`])
+      : pick(['Want to know when your team plays next?', 'Looking for the schedule, standings, or how to sign up?', 'Ask me about games, scores, or registration.']);
+
+    if (/^(how (are|r) (you|u|ya)|how'?s it going|how are things|how you doing|hows your (day|night)|you good|what'?s new)\b/.test(t))
+      return pick(['All systems running and the ice is freshly flooded.', 'Very well, thank you. Busy keeping score.', 'Never better. Nobody has asked me to play goal yet.']) + ' ' + nudge;
+    if (/\b(who|what) (are|r) (you|u)\b|\byour name\b|\bare you (a )?(bot|robot|ai|real|human)\b/.test(t))
+      return "I'm Conrad, the league's concierge. I'm not a person, but I read the league's records live, so I know the schedule, scores, standings and sign-up details. " + nudge;
+    if (/\b(joke|funny|make me laugh)\b/.test(t))
+      return pick([
+        "Why did the beer-league goalie bring a ladder? He heard the drinks were on the top shelf.",
+        "I asked the Zamboni driver how work was going. He said it's mostly going in circles.",
+        "Our penalty box has the best seats in the house. Unfortunately, they come with a two-minute limit."
+      ]) + ' ' + nudge;
+    if (/\b(bye|goodbye|see (ya|you)|later|good ?night|gn|cya|peace)\b/.test(t))
+      return pick(['Good night. Keep your stick on the ice.', 'Until next time. Mind the boards.', 'Cheers. See you at the rink.']);
+    if (/\b(love (you|it|this)|you('?re| are) (the best|great|awesome|cool|smart)|nice|cool|awesome|sick|dope|great job|good bot)\b/.test(t))
+      return pick(['Much obliged.', 'Kind of you to say.', 'I try to keep it tidy.']) + ' ' + nudge;
+    if (/\b(stupid|dumb|useless|suck|sucks|hate you|trash|idiot)\b/.test(t))
+      return "Fair enough. I only know league business, so I can miss the mark. Try asking about a team, the schedule, standings or registration, and I'll do better.";
+    if (/^(dude|bro|man|conrad|yo|hello\?|you there|anyone there)$/.test(t)) return greeting();
+    if (/^(ok(ay)?|k|kk|cool|sure|alright|got it|nice|lol|lmao|haha+|ha|wow|hmm+|yeah|yep|nope|no|yes)$/.test(t))
+      return pick(['Anything else I can look up?', 'Right then. What else can I find for you?', nudge]);
+    if (/\b(weather|cold|hot|snow)\b/.test(t))
+      return "Can't speak for outside, but inside the rink it's always a crisp few degrees. " + nudge;
+    if (/\b(beer|pint|drinks?|bar)\b/.test(t))
+      return "Pucks first, pints after. That's the league motto, more or less. " + nudge;
+    return null;
+  }
+
+  function greeting(rest) {
+    const teamName = rememberedTeamName();
+    const hi = pick(['Hey there.', 'Good to see you.', "Evening. Well, whatever time it is, it's game time somewhere.", 'Hello.', 'Not much, just watching the scoreboard.']);
+    return `${hi} ${teamName ? `Want to know when ${teamName} play next, or something else?` : 'What can I find for you? Games, scores, standings, or sign-up.'}`;
+  }
+
+  const FALLBACKS = [
+    "That one's outside my rink, I'm afraid.",
+    "I didn't quite catch that.",
+    "Hmm, that's not something I keep in the league records.",
+    "You've lost me there."
+  ];
+
   const HELP = "I can tell you when your team plays next, recent scores, standings, scoring leaders, how to register and what it costs, or where we play. Try \"when do the Lagers play next?\"";
 
   /* Order matters: the first rule whose pattern matches wins. */
   const RULES = [
-    { re: /^(hi|hey|hello|yo|good (morning|afternoon|evening|day))\b[\s!.]*$/i, fn: () => `Good day. ${HELP}` },
     { re: /\b(thanks|thank you|cheers|thx|ty)\b/i, fn: () => 'My pleasure. Anything else?' },
     { re: /\b(regist|sign ?up|join|price|cost|fee|how much|pay|stripe|spot)/i, fn: register },
     { re: /\b(scor(ing|er)s? lead|top scor|leading scor|points lead|most (goals|points)|scorers?|leaders?)\b/i, fn: scorers, async: true },
@@ -362,6 +413,18 @@
   }
 
   async function answer(text) {
+    // Strip a leading "hey dude," so "hey when do the Lagers play" still works.
+    const g = text.match(GREET_RE);
+    if (g && g[0].trim()) {
+      const rest = text.slice(g[0].length).trim();
+      if (!rest) return greeting();
+      const chat = smallTalk(rest);
+      if (chat && !RULES.some(r => r.re.test(rest))) return chat;
+      text = rest;
+    }
+    const chat = smallTalk(text);
+    if (chat && !RULES.some(r => r.re.test(text))) return chat;
+
     const d = await data();
     const named = findTeam(text, d);
     const convoTeam = d.byId[convo.teamId] || null;
@@ -401,7 +464,8 @@
 
     if (!rule) {
       if (named) { convo = { topic: 'teamsAnswer', teamId: named.id, shown: 3 }; return teamsAnswer(text, d, named); }
-      return `I'm not sure I follow. ${HELP}`;
+      teamChipsOrSuggestions(d);
+      return `${pick(FALLBACKS)} ${HELP}`;
     }
     let team = null;
     if (rule.team) {
@@ -411,6 +475,15 @@
     }
     if (rule.fn.name in TOPICS) convo = { topic: rule.fn.name, teamId: team?.id || null, shown: team ? 3 : 4 };
     return rule.fn(text, d, team);
+  }
+
+  function teamChipsOrSuggestions() {
+    const wrap = document.getElementById('conrad-chips');
+    if (!wrap) return;
+    const team = rememberedTeamName();
+    const list = [team ? `When do the ${team} play next?` : 'When is my next game?', 'Standings', 'How do I register?'];
+    wrap.innerHTML = list.map(q => `<button class="hud-chip" data-q="${window.Ivy.esc(q)}">${window.Ivy.esc(q)}</button>`).join('');
+    wrap.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { wrap.innerHTML = ''; send(b.dataset.q); });
   }
 
   function teamChips(teams) {
