@@ -23,29 +23,30 @@
   function mount() {
     const el = document.createElement('div');
     el.innerHTML = `
-      <button id="conrad-open" aria-label="Ask Conrad"
-        class="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full pl-4 pr-5 py-3 text-white shadow-lg"
-        style="background: var(--ivy);">
-        <span class="inline-block h-6 w-6 rounded-full" style="background: var(--brass)"></span>
-        <span class="text-sm font-semibold">Ask Conrad</span>
+      <button id="conrad-open" aria-label="Ask Conrad" class="conrad-launch">
+        <span class="conrad-orb" aria-hidden="true"><i></i><i></i><b></b></span>
+        <span class="conrad-launch-label">Ask Conrad</span>
       </button>
 
-      <section id="conrad-panel" role="dialog" aria-label="Conrad, league concierge"
-        class="hidden fixed bottom-5 right-5 z-50 w-[min(24rem,92vw)] h-[min(34rem,80vh)] bg-white rounded-lg overflow-hidden flex flex-col"
-        style="border:1px solid var(--line)">
-        <header class="crest-field text-white px-4 py-3 flex items-center justify-between">
-          <div>
-            <p class="display text-base leading-none">Conrad</p>
-            <p class="text-[11px] text-white/70 mt-1">League concierge</p>
+      <section id="conrad-panel" role="dialog" aria-label="Conrad, league concierge" class="hidden conrad-hud">
+        <span class="hud-corner tl" aria-hidden="true"></span><span class="hud-corner tr" aria-hidden="true"></span>
+        <span class="hud-corner bl" aria-hidden="true"></span><span class="hud-corner br" aria-hidden="true"></span>
+        <header class="hud-head">
+          <span class="conrad-orb sm" aria-hidden="true"><i></i><i></i><b></b></span>
+          <div class="flex-1 min-w-0">
+            <p class="hud-name">CONRAD</p>
+            <p class="hud-status"><span class="hud-dot"></span><span id="conrad-status">Online · League concierge</span></p>
           </div>
-          <button id="conrad-close" aria-label="Close" class="text-white/80 hover:text-white text-xl leading-none">&times;</button>
+          <button id="conrad-close" aria-label="Close" class="hud-close">&times;</button>
         </header>
-        <div id="conrad-log" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3"></div>
+        <div class="hud-rule" aria-hidden="true"></div>
+        <div id="conrad-log" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3" aria-live="polite"></div>
         <div id="conrad-chips" class="px-4 pb-2 flex flex-wrap gap-2"></div>
-        <form id="conrad-form" class="border-t p-3 flex gap-2" style="border-color: var(--line)">
+        <form id="conrad-form" class="hud-form">
           <label class="sr-only" for="conrad-input">Message Conrad</label>
-          <input id="conrad-input" class="field !py-2" autocomplete="off" placeholder="Ask about schedules, teams, sign-up…">
-          <button class="btn btn-primary !py-2 !px-4">Send</button>
+          <span class="hud-prompt" aria-hidden="true">&gt;</span>
+          <input id="conrad-input" class="hud-input" autocomplete="off" placeholder="Ask about schedules, teams, sign-up…">
+          <button class="hud-send">Send</button>
         </form>
       </section>`;
     document.body.appendChild(el);
@@ -62,14 +63,39 @@
     };
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) toggle(); });
 
-    bubble('assistant', GREETING);
-    chips();
+    const saved = loadChat();
+    if (saved.history.length) {
+      history = saved.history;
+      history.forEach(m => bubble(m.role, m.content));
+      if (saved.open) toggle();
+    } else {
+      const t = rememberedTeamName();
+      const hello = t
+        ? `Welcome back. Last time you were following ${t}. Ask me "when do we play next?" or anything else about the league.`
+        : GREETING;
+      bubble('assistant', hello);
+      history.push({ role: 'assistant', content: hello });
+      chips(t);
+    }
   }
 
-  function chips() {
+  /* The conversation survives moving between pages (same browser tab). */
+  const CHAT_KEY = 'ivy.conrad.chat';
+  function loadChat() {
+    try { return JSON.parse(sessionStorage.getItem(CHAT_KEY)) || { history: [] }; } catch (e) { return { history: [] }; }
+  }
+  function saveChat() {
+    try { sessionStorage.setItem(CHAT_KEY, JSON.stringify({ history: history.slice(-40), open, convo })); } catch (e) {}
+  }
+  function rememberedTeamName() {
+    try { return localStorage.getItem('ivy.conrad.teamName'); } catch (e) { return null; }
+  }
+
+  function chips(team) {
     const wrap = document.getElementById('conrad-chips');
-    wrap.innerHTML = SUGGESTIONS.map(s =>
-      `<button class="text-xs px-3 py-1.5 rounded-full btn-quiet" data-q="${s}">${s}</button>`).join('');
+    const list = team ? [`When do the ${team} play next?`, ...SUGGESTIONS.slice(1)] : SUGGESTIONS;
+    wrap.innerHTML = list.map(s =>
+      `<button class="hud-chip" data-q="${s}">${s}</button>`).join('');
     wrap.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { wrap.innerHTML = ''; send(b.dataset.q); });
   }
 
@@ -78,6 +104,7 @@
     document.getElementById('conrad-panel').classList.toggle('hidden', !open);
     document.getElementById('conrad-open').classList.toggle('hidden', open);
     if (open) setTimeout(() => document.getElementById('conrad-input').focus(), 50);
+    saveChat();
   }
 
   function bubble(role, text) {
@@ -96,8 +123,13 @@
     const log = document.getElementById('conrad-log');
     const d = document.createElement('div');
     d.className = 'conrad-bubble conrad-bot conrad-typing';
-    d.innerHTML = '<span></span><span></span><span></span>';
+    d.innerHTML = '<span></span><span></span><span></span><em>Checking the league records</em>';
     log.appendChild(d); log.scrollTop = log.scrollHeight;
+    const panel = document.getElementById('conrad-panel');
+    const status = document.getElementById('conrad-status');
+    panel.classList.add('is-thinking'); status.textContent = 'Working…';
+    const remove = d.remove.bind(d);
+    d.remove = () => { remove(); panel.classList.remove('is-thinking'); status.textContent = 'Online · League concierge'; };
     return d;
   }
 
@@ -111,7 +143,15 @@
   let pending = null;            // intent waiting on "which team?"
 
   let myTeam = null;
-  const remember = (id) => { myTeam = id; try { localStorage.setItem(TEAM_KEY, id); } catch (e) {} };
+  const remember = (team) => {
+    myTeam = team.id;
+    try { localStorage.setItem(TEAM_KEY, team.id); localStorage.setItem('ivy.conrad.teamName', team.name); } catch (e) {}
+  };
+  const forget = () => { myTeam = null; try { localStorage.removeItem(TEAM_KEY); localStorage.removeItem('ivy.conrad.teamName'); } catch (e) {} };
+
+  /* What this conversation is about, so follow-ups like "and the Ale
+     division?", "what about after that?" or "how did they do?" work. */
+  let convo = loadChat().convo || { topic: null, teamId: null, shown: 0 };
   const recalled = () => { try { return localStorage.getItem(TEAM_KEY) || myTeam; } catch (e) { return myTeam; } };
 
   async function data() {
@@ -241,6 +281,7 @@
     const out = divs.map(dv => {
       const rows = d.table.filter(r => r.division === dv)
         .sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga)).slice(0, 3);
+      if (!rows.length) return `${dv} division: no results yet.`;
       return `${dv} division:\n${list(rows.map((r, i) => `${i + 1}. ${r.name}, ${r.pts} pts (${r.w}-${r.l}-${r.t})`))}`;
     });
     return `${out.join('\n\n')}\n\nFull table on the [Standings page](standings.html).`;
@@ -300,43 +341,82 @@
     { re: /\b(standing|first place|1st place|table|rank|record|leading|on top|best team)/i, fn: standings },
     { re: /\b(live|right now|on the ice|currently)\b/i, fn: liveNow },
     { re: /\b(where|venue|rink|arena|address|location|park)/i, fn: where },
-    { re: /\b(last|result|final|won|win|lost|lose|beat|did .* do|score)/i, fn: lastResult, team: true },
-    { re: /\b(next|when|play|schedule|game|tonight|today|tomorrow|this week)/i, fn: nextGame, team: true, askTeam: /\b(my|our|we|i)\b/i },
+    { re: /\b(last|result|final|won|win|lost|lose|beat|did .* do|score)/i, fn: lastResult, team: true, askTeam: /\b(my|our|we|us|i)\b/i },
+    { re: /\b(next|when|play|schedule|game|tonight|today|tomorrow|this week)/i, fn: nextGame, team: true, askTeam: /\b(my|our|we|us|i)\b/i },
     { re: /\b(division|league|level|skill|beginner|competitive)/i, fn: divisions },
     { re: /\b(teams?|roster|line ?up)\b/i, fn: teamsAnswer, team: true },
     { re: /\b(contact|email|refund|commissioner|question|help me|talk to)/i, fn: contact },
     { re: /\b(news|announce|update)/i, fn: news }
   ];
 
+  const FOLLOW_UP = /^(and|what about|how about|same for|ok(ay)? and|now)\b|\b(them|they|their|that team)\b/i;
+  const MORE = /\b(after that|the one after|and then|following|more games|any more|rest of)\b/i;
+  const TOPICS = { nextGame, lastResult, standings, scorers, teamsAnswer, liveNow };
+
+  function moreGames(text, d, team) {
+    const up = d.games.filter(isUpcoming).filter(g => !team || involves(g, team));
+    const rows = up.slice(convo.shown, convo.shown + 4);
+    if (!rows.length) return `That's everything I have${team ? ` for ${team.name}` : ''} so far. New dates go up on the [Schedule page](schedule.html).`;
+    convo.shown += rows.length;
+    return `After that${team ? ` for ${team.name}` : ''}:\n${list(rows.map(g => `${when(g.starts_at)}: ${matchup(g)}${venue(g)}`))}`;
+  }
+
   async function answer(text) {
     const d = await data();
     const named = findTeam(text, d);
-    if (named) remember(named.id);
+    const convoTeam = d.byId[convo.teamId] || null;
+    const mine = d.byId[recalled()] || null;
+
+    // "I play for the Lagers" / "my team is ..."
+    if (named && /\b(i('?m| am)? (on|with|play (for|on))|my team('?s| is)|we('?re| are))\b/i.test(text)) {
+      remember(named);
+      convo = { topic: 'nextGame', teamId: named.id, shown: 3 };
+      return `Noted: you're with ${named.name}. I'll remember that next time too. ${nextGame(text, d, named)}`;
+    }
+    if (/\bforget (my team|me|that)\b/i.test(text)) {
+      forget();
+      return "Done. I've forgotten your team.";
+    }
 
     // Reply to "which team are you on?"
     if (pending && named) {
       const fn = pending; pending = null;
+      remember(named);
+      convo = { topic: fn.name, teamId: named.id, shown: 3 };
       return fn(text, d, named);
     }
     pending = null;
 
+    // "what about after that?"
+    if (MORE.test(text) && convo.topic === 'nextGame') return moreGames(text, d, named || convoTeam);
+
+    // "and the Ale division?" / "how did they do?" / "what about the Lagers?"
     const rule = RULES.find(r => r.re.test(text));
+    if (convo.topic && TOPICS[convo.topic] && FOLLOW_UP.test(text) && (!rule || rule.team || named || findDivision(text, d))) {
+      const fn = rule && rule.team ? rule.fn : TOPICS[convo.topic];
+      const team = named || convoTeam;
+      convo = { topic: fn.name, teamId: team?.id || null, shown: 3 };
+      return fn(text, d, team);
+    }
+
     if (!rule) {
-      if (named) return teamsAnswer(text, d, named);
+      if (named) { convo = { topic: 'teamsAnswer', teamId: named.id, shown: 3 }; return teamsAnswer(text, d, named); }
       return `I'm not sure I follow. ${HELP}`;
     }
     let team = null;
     if (rule.team) {
-      team = named || (rule.askTeam?.test(text) ? d.byId[recalled()] : null);
-      if (!team && rule.askTeam?.test(text)) return askTeam(rule.fn, d);
+      const personal = rule.askTeam?.test(text);
+      team = named || (personal ? mine : null) || (FOLLOW_UP.test(text) ? convoTeam : null);
+      if (!team && personal) return askTeam(rule.fn, d);
     }
+    if (rule.fn.name in TOPICS) convo = { topic: rule.fn.name, teamId: team?.id || null, shown: team ? 3 : 4 };
     return rule.fn(text, d, team);
   }
 
   function teamChips(teams) {
     const wrap = document.getElementById('conrad-chips');
     wrap.innerHTML = teams.map(t =>
-      `<button class="text-xs px-3 py-1.5 rounded-full btn-quiet" data-q="${window.Ivy.esc(t.name)}">${window.Ivy.esc(t.name)}</button>`).join('');
+      `<button class="hud-chip" data-q="${window.Ivy.esc(t.name)}">${window.Ivy.esc(t.name)}</button>`).join('');
     wrap.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { wrap.innerHTML = ''; send(b.dataset.q); });
   }
 
@@ -352,6 +432,7 @@
       dots.remove();
       bubble('assistant', reply);
       history.push({ role: 'assistant', content: reply });
+      saveChat();
     } catch (err) {
       dots.remove();
       bubble('assistant',
