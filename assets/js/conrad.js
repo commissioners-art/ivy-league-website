@@ -334,7 +334,7 @@
      Short, in-character replies to chit-chat, each with a nudge back
      toward something useful. pick() varies the wording. */
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  const GREET_RE = /^\s*(?:(?:dude|bro|man|ok(?:ay)?|so|conrad)[\s,!]+)?(hi+|hey+|hello+|howdy|yo+|sup|wass?up|what'?s ?up|whats good|hiya|g'?day|good (morning|afternoon|evening|day)|greetings|evening|morning)\b[\s,!.?]*(there|dude|bro|man|buddy|pal|mate|conrad|guys|all|everyone)?\b[\s,!.?]*/i;
+  const GREET_RE = /^\s*(?:(?:dude|bro|man|ok(?:ay)?|so|conrad)[\s,!]+)?(hi+|hey+|hello+|howdy|yo+|sup|wass?up|wh?at'?s? ?(?:up|good|happening|new|poppin'?g?|crackin'?g?)|how'?s it going|hiya|g'?day|good (morning|afternoon|evening|day)|greetings|evening|morning)\b[\s,!.?]*(there|dude|bro|man|buddy|pal|mate|conrad|guys|all|everyone)?\b[\s,!.?]*/i;
 
   function smallTalk(text) {
     const t = text.toLowerCase().replace(/[^a-z' ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -371,7 +371,7 @@
 
   function greeting(rest) {
     const teamName = rememberedTeamName();
-    const hi = pick(['Hey there.', 'Good to see you.', "Evening. Well, whatever time it is, it's game time somewhere.", 'Hello.', 'Not much, just watching the scoreboard.']);
+    const hi = pick(['Hey there.', 'Good to see you.', 'All good here, just keeping an eye on the scoreboard.', 'Hello.', 'Not much, just watching the scoreboard.']);
     return `${hi} ${teamName ? `Want to know when ${teamName} play next, or something else?` : 'What can I find for you? Games, scores, standings, or sign-up.'}`;
   }
 
@@ -413,10 +413,17 @@
   }
 
   async function answer(text) {
-    // Strip a leading "hey dude," so "hey when do the Lagers play" still works.
-    const g = text.match(GREET_RE);
-    if (g && g[0].trim()) {
-      const rest = text.slice(g[0].length).trim();
+    // Phones type curly apostrophes ("what’s up"); make them plain.
+    text = text.replace(/[\u2018\u2019\u201B`´]/g, "'").replace(/[\u201C\u201D]/g, '"').trim();
+    // Strip leading greetings ("hey, what's up dude,") so a question after them still works.
+    let g = text.match(GREET_RE), greeted = false;
+    while (g && g[0].trim()) {
+      greeted = true;
+      text = text.slice(g[0].length).trim();
+      g = text.match(GREET_RE);
+    }
+    if (greeted) {
+      const rest = text;
       if (!rest) return greeting();
       const chat = smallTalk(rest);
       if (chat && !RULES.some(r => r.re.test(rest))) return chat;
