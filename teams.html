@@ -30,15 +30,20 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="assets/js/config.js"></script>
 <script src="assets/js/app.js"></script>
+<script src="assets/js/league.js"></script>
 <script src="assets/js/conrad.js"></script>
 <script>
 document.addEventListener('ivy:ready', async () => {
   const { esc } = window.Ivy;
 
-  const [{ data: teams }, { data: stats }] = await Promise.all([
+  const [{ data: teams }, { data: stats }, susp] = await Promise.all([
     sb.from('teams').select('*').order('division').order('sort').order('name'),
-    sb.from('player_stats').select('*')
+    sb.from('player_stats').select('*'),
+    IvySusp.loadActive(sb)
   ]);
+  const suspBy = IvySusp.byPlayer(susp);
+  const suspTag = p => { const s = suspBy.get(p.id); return s
+    ? `<span class="ml-2 inline-block text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-sm bg-red-700 text-white whitespace-nowrap">Suspended · ${esc(s.label)}</span>` : ''; };
 
   const statFor = id => (stats || []).find(s => s.player_id === id) || { goals: 0, assists: 0, points: 0, pim: 0 };
   const el = document.getElementById('teams');
@@ -67,7 +72,7 @@ document.addEventListener('ivy:ready', async () => {
             ${roster.length ? roster.map(p => { const s = statFor(p.id); return `
               <tr>
                 <td class="font-bold" style="color:var(--ivy)">${p.jersey_number ?? '—'}</td>
-                <td class="font-semibold">${esc(p.first_name)} ${esc(p.last_name)}</td>
+                <td class="font-semibold">${esc(p.first_name)} ${esc(p.last_name)}${suspTag(p)}</td>
                 <td class="text-gray-600">${esc(p.position)}</td>
                 <td class="text-right">${s.goals}</td><td class="text-right">${s.assists}</td>
                 <td class="text-right font-bold">${s.points}</td><td class="text-right">${s.pim}</td>

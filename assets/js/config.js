@@ -13,5 +13,10 @@ window.IVY_CONFIG = {
   TAGLINE: 'Where pucks meet pints in Milton',
   VENUE: 'Milton Sports Centre',
   CONTACT_EMAIL: 'info@miltonivyleague.ca',
-  TIMEZONE: 'America/Toronto'
+  TIMEZONE: 'America/Toronto',
+
+  // Live game time is estimated from the scheduled start (no clock to run).
+  // A game is GAME_MINUTES long, split evenly into PERIODS periods.
+  GAME_MINUTES: 60,
+  PERIODS: 3
 };
