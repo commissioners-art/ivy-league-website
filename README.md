@@ -1,7 +1,7 @@
 # Milton Ivy League — website
 
 Static site on GitHub Pages, data and auth in Supabase, payments through Stripe links,
-and Conrad the concierge running on a Supabase Edge Function.
+and Conrad the concierge, who answers from live league data.
 
 ```
 index.html          Home — live/next game, this week, leaders, news
@@ -19,7 +19,6 @@ assets/js/app.js     Shared: header, footer, editable content, date helpers
 assets/js/conrad.js  Conrad chat widget
 assets/js/admin.js   Staff portal logic
 supabase/schema.sql              Run this once in the SQL editor
-supabase/functions/conrad/index.ts  Deploy this for Conrad
 ```
 
 ---
@@ -47,27 +46,12 @@ supabase/functions/conrad/index.ts  Deploy this for Conrad
 The anon key is meant to be public. Row level security is what protects the data: anyone
 can read the schedule, only signed-in staff can change a score, only admins can edit pages.
 
-## 2. Deploy Conrad
+## 2. Conrad
 
-Conrad needs an Anthropic API key, and a key can never live in a static site — so it runs
-in an Edge Function instead.
-
-```bash
-npm install -g supabase
-supabase login
-supabase link --project-ref YOUR-PROJECT-REF
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-your-key
-supabase functions deploy conrad --no-verify-jwt
-```
-
-Conrad is handed the current date and time, the next 25 games with scores and venues, the
-team list, and the live registration prices each time someone writes to him, so his answers
-about "when do I play next" stay correct without you touching anything. His manners,
-refusals and tone live in the `SYSTEM` string at the top of
-`supabase/functions/conrad/index.ts` — edit that text to change how he behaves.
-
-If you skip this step the rest of the site works fine; Conrad simply falls back to pointing
-people at the schedule and registration pages.
+Conrad needs no setup. He runs entirely in the browser and answers from the live database
+(games, teams, standings, scoring leaders, payment links and news) using keyword rules in
+`assets/js/conrad.js`. There is no AI service, API key or Edge Function to pay for or deploy.
+To teach him a new kind of answer, add an entry to the `RULES` list in that file.
 
 ## 3. Push to GitHub
 
@@ -191,6 +175,6 @@ everywhere so scores don't jitter as they change.
 - **Scores don't update live** — confirm step 2 of the schema ran the
   `alter publication supabase_realtime` lines, and that *Database → Replication* lists
   `games` and `game_events`.
-- **Conrad says he can't reach the records** — the Edge Function isn't deployed, or the
-  `ANTHROPIC_API_KEY` secret is missing.
+- **Conrad says he can't reach the records** — Supabase is unreachable, or the `games`/`teams`
+  tables are missing their public read policy.
 - **Custom domain shows a 404** — the `CNAME` file must contain the domain and nothing else.

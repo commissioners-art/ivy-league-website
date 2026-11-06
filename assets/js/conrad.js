@@ -1,9 +1,8 @@
 /* ---------------------------------------------------------------
    conrad.js — the league's concierge.
-   The widget gathers live context (today's date, upcoming games,
-   registration links, current page) and posts it to the `conrad`
-   Supabase Edge Function, which talks to Claude with your API key
-   kept safely server-side.
+   Rule-based: Conrad reads live data straight from Supabase
+   (games, teams, standings, payment links, news) and answers
+   with keyword rules. No AI service, API key or Edge Function.
 --------------------------------------------------------------- */
 (function () {
   const CFG = window.IVY_CONFIG;
@@ -102,31 +101,243 @@
     return d;
   }
 
-  /* Live facts Conrad is allowed to reason over. */
-  async function context() {
+  /* ================================================================
+     The brain. Conrad answers from live Supabase data with simple
+     keyword rules: no AI service, no API key, nothing to deploy.
+     To teach him a new answer, add a rule to RULES below.
+  ================================================================ */
+  const TEAM_KEY = 'ivy.conrad.team';
+  let cache = null, cacheAt = 0;
+  let pending = null;            // intent waiting on "which team?"
+
+  let myTeam = null;
+  const remember = (id) => { myTeam = id; try { localStorage.setItem(TEAM_KEY, id); } catch (e) {} };
+  const recalled = () => { try { return localStorage.getItem(TEAM_KEY) || myTeam; } catch (e) { return myTeam; } };
+
+  async function data() {
+    if (cache && Date.now() - cacheAt < 60e3) return cache;
     const sb = window.sb;
-    const nowISO = new Date().toISOString();
-    const out = { now: new Date().toLocaleString('en-CA', { timeZone: window.Ivy.TZ }), page: location.pathname.split('/').pop() || 'index.html' };
-
-    const [games, teams, links, content] = await Promise.all([
-      sb.from('games').select('starts_at, venue, division, status, home_score, away_score, period, home:home_team_id(name), away:away_team_id(name)')
-        .gte('starts_at', new Date(Date.now() - 6 * 3600e3).toISOString()).order('starts_at').limit(25),
-      sb.from('teams').select('name, division'),
-      sb.from('payment_links').select('label, description, price_text, url').eq('active', true),
-      sb.from('site_content').select('key, value')
+    const from = new Date(Date.now() - 21 * 864e5).toISOString();
+    const to = new Date(Date.now() + 120 * 864e5).toISOString();
+    const [games, teams, links, table, news] = await Promise.all([
+      sb.from('games').select('id, starts_at, venue, division, status, home_score, away_score, period, home_team_id, away_team_id')
+        .gte('starts_at', from).lte('starts_at', to).order('starts_at'),
+      sb.from('teams').select('id, name, division').order('sort'),
+      sb.from('payment_links').select('label, description, price_text, url').eq('active', true).order('sort'),
+      sb.from('standings').select('team_id, name, division, gp, w, l, t, pts, gf, ga'),
+      sb.from('announcements').select('id, title, published_at').eq('published', true).order('published_at', { ascending: false }).limit(3)
     ]);
+    // Games and teams are essential; the rest can be missing.
+    if (games.error) throw games.error;
+    if (teams.error) throw teams.error;
+    const byId = Object.fromEntries((teams.data || []).map(t => [t.id, t]));
+    cache = {
+      teams: teams.data || [],
+      byId,
+      games: (games.data || []).map(g => ({ ...g, home: byId[g.home_team_id], away: byId[g.away_team_id] })),
+      links: links.data || [],
+      table: table.data || [],
+      news: news.data || []
+    };
+    cacheAt = Date.now();
+    return cache;
+  }
 
-    out.upcoming_games = (games.data || []).map(g => ({
-      when: `${window.Ivy.fmtDate(g.starts_at, { year: 'numeric' })} at ${window.Ivy.fmtTime(g.starts_at)}`,
-      matchup: `${g.away?.name ?? 'TBD'} at ${g.home?.name ?? 'TBD'}`,
-      division: g.division, venue: g.venue, status: g.status,
-      score: g.status === 'final' || g.status === 'live' ? `${g.away_score}-${g.home_score}` : null
-    }));
-    out.teams = (teams.data || []).map(t => `${t.name} (${t.division})`);
-    out.registration_options = links.data || [];
-    out.page_copy = Object.fromEntries((content.data || []).map(r => [r.key, r.value]).slice(0, 40));
-    out.reference_time_iso = nowISO;
-    return out;
+  /* ---------- wording helpers ---------- */
+  const TZ = () => window.Ivy.TZ;
+  const dayKey = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: TZ() });   // YYYY-MM-DD
+  function when(iso) {
+    const days = Math.round((Date.parse(dayKey(iso)) - Date.parse(dayKey(Date.now()))) / 864e5);
+    const time = window.Ivy.fmtTime(iso);
+    const hour = Number(new Date(iso).toLocaleString('en-CA', { hour: 'numeric', hour12: false, timeZone: TZ() }));
+    if (days === 0) return `${hour >= 17 ? 'tonight' : 'today'} at ${time}`;
+    if (days === 1) return `tomorrow at ${time}`;
+    if (days === -1) return `yesterday`;
+    if (days > 1 && days < 7) return `${new Date(iso).toLocaleDateString('en-CA', { weekday: 'long', timeZone: TZ() })} at ${time}`;
+    return `${window.Ivy.fmtDate(iso)} at ${time}`;
+  }
+  const name = (t) => t?.name ?? 'TBD';
+  const matchup = (g) => `${name(g.away)} at ${name(g.home)}`;
+  const venue = (g) => g.venue ? ` at ${g.venue}` : '';
+  const isUpcoming = (g) => g.status === 'scheduled' && Date.parse(g.starts_at) > Date.now() - 2 * 3600e3;
+  const involves = (g, t) => g.home_team_id === t.id || g.away_team_id === t.id;
+  const list = (rows) => rows.map(r => `• ${r}`).join('\n');
+
+  function finalLine(g, team) {
+    if (team) {
+      const mine = g.home_team_id === team.id ? g.home_score : g.away_score;
+      const theirs = g.home_team_id === team.id ? g.away_score : g.home_score;
+      const opp = g.home_team_id === team.id ? g.away : g.home;
+      const res = mine > theirs ? 'beat' : mine < theirs ? 'lost to' : 'tied';
+      return `${team.name} ${res} ${name(opp)} ${mine}-${theirs} (${window.Ivy.fmtDate(g.starts_at)})`;
+    }
+    return `${name(g.away)} ${g.away_score}, ${name(g.home)} ${g.home_score} (${window.Ivy.fmtDate(g.starts_at)})`;
+  }
+
+  /* Find a team named in the message: full name, or its last word ("Lagers"). */
+  function findTeam(text, d) {
+    const q = ` ${text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ')} `;
+    const clean = (s) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').trim();
+    let hit = d.teams.find(t => q.includes(` ${clean(t.name)} `));
+    if (hit) return hit;
+    hit = d.teams.find(t => {
+      const words = clean(t.name).split(/\s+/).filter(w => w.length >= 4 && !['team', 'the'].includes(w));
+      return words.some(w => q.includes(` ${w} `) || q.includes(` ${w.replace(/s$/, '')} `));
+    });
+    return hit || null;
+  }
+
+  function findDivision(text, d) {
+    const q = text.toLowerCase();
+    return [...new Set(d.teams.map(t => t.division))].find(div => div && q.includes(div.toLowerCase())) || null;
+  }
+
+  /* ---------- answers ---------- */
+  function askTeam(intent, d) {
+    pending = intent;
+    if (!d.teams.length) return "The teams haven't been set for this season yet. Keep an eye on the [Schedule page](schedule.html).";
+    teamChips(d.teams);
+    return 'Which team are you on? Tap it below or type the name, and I\'ll remember it for next time.';
+  }
+
+  function nextGame(text, d, team) {
+    const up = d.games.filter(isUpcoming);
+    if (team) {
+      const g = up.find(x => involves(x, team));
+      if (!g) return `I don't see an upcoming game for ${team.name} yet. The full list is on the [Schedule page](schedule.html).`;
+      const opp = g.home_team_id === team.id ? g.away : g.home;
+      const later = up.filter(x => involves(x, team) && x !== g).slice(0, 2);
+      let out = `${team.name} play ${name(opp)} ${when(g.starts_at)}${venue(g)}.`;
+      if (later.length) out += `\n\nAfter that:\n${list(later.map(x => `${when(x.starts_at)}: ${matchup(x)}`))}`;
+      return out;
+    }
+    if (!up.length) return "There are no games on the schedule right now. The [Schedule page](schedule.html) will show new dates as soon as they're posted.";
+    const today = up.filter(g => dayKey(g.starts_at) === dayKey(Date.now()));
+    const rows = (today.length ? today : up.slice(0, 4)).map(g => `${when(g.starts_at)}: ${matchup(g)}${venue(g)}`);
+    return `${today.length ? "Today's games" : 'Next up'}:\n${list(rows)}\n\nTell me your team and I'll find just yours. Full list on the [Schedule page](schedule.html).`;
+  }
+
+  function lastResult(text, d, team) {
+    let finals = d.games.filter(g => g.status === 'final').reverse();
+    if (team) finals = finals.filter(g => involves(g, team));
+    if (!finals.length) return `I don't have any final scores${team ? ` for ${team.name}` : ''} from the last few weeks. Try the [Standings](standings.html).`;
+    if (team) return `${finalLine(finals[0], team)}.`;
+    return `Latest results:\n${list(finals.slice(0, 4).map(g => finalLine(g)))}`;
+  }
+
+  function liveNow(text, d) {
+    const live = d.games.filter(g => g.status === 'live');
+    if (!live.length) {
+      const g = d.games.find(isUpcoming);
+      return g ? `Nothing is on the ice right now. Next up is ${matchup(g)} ${when(g.starts_at)}${venue(g)}.` : 'Nothing is on the ice right now.';
+    }
+    return `On the ice now:\n${list(live.map(g => `${name(g.away)} ${g.away_score}, ${name(g.home)} ${g.home_score} (${window.Ivy.ordinal(g.period)})`))}\n\nFollow along on [Live scores](live.html).`;
+  }
+
+  function standings(text, d) {
+    if (!d.table.length) return 'Standings will appear once the first games are final. See the [Standings page](standings.html).';
+    const div = findDivision(text, d);
+    const divs = div ? [div] : [...new Set(d.table.map(r => r.division))];
+    const out = divs.map(dv => {
+      const rows = d.table.filter(r => r.division === dv)
+        .sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga)).slice(0, 3);
+      return `${dv} division:\n${list(rows.map((r, i) => `${i + 1}. ${r.name}, ${r.pts} pts (${r.w}-${r.l}-${r.t})`))}`;
+    });
+    return `${out.join('\n\n')}\n\nFull table on the [Standings page](standings.html).`;
+  }
+
+  async function scorers(text, d) {
+    const div = findDivision(text, d);
+    let q = window.sb.from('player_stats').select('first_name, last_name, team_name, division, goals, assists, points')
+      .order('points', { ascending: false }).order('goals', { ascending: false }).limit(5);
+    if (div) q = q.eq('division', div);
+    const { data: rows, error } = await q;
+    if (error || !rows?.length || !rows[0].points) return 'No one has a point on the board yet. Check the [Standings page](standings.html) as games go final.';
+    return `Scoring leaders${div ? ` (${div})` : ''}:\n${list(rows.filter(r => r.points).map(r => `${r.first_name} ${r.last_name} (${r.team_name ?? 'no team'}): ${r.goals}G ${r.assists}A, ${r.points} pts`))}`;
+  }
+
+  function register(text, d) {
+    const intro = 'Pick your division on the [Registration page](register.html), fill in the form, then pay through the secure Stripe link. Your name appears on the roster once payment clears.';
+    if (!d.links.length) return intro;
+    return `${intro}\n\nCurrent options:\n${list(d.links.map(l => `${l.label}${l.price_text ? `: ${l.price_text}` : ''}`))}`;
+  }
+
+  function divisions(text, d) {
+    const divs = [...new Set(d.teams.map(t => t.division).filter(Boolean))];
+    if (!divs.length) return 'Divisions for this season are still being set. The [Registration page](register.html) has the latest.';
+    return `We run ${divs.length === 1 ? 'one division' : `${divs.length} divisions`}:\n${list(divs.map(dv => `${dv}: ${d.teams.filter(t => t.division === dv).map(t => t.name).join(', ')}`))}\n\nRosters are on the [Teams page](teams.html).`;
+  }
+
+  function teamsAnswer(text, d, team) {
+    if (team) return `${team.name} play in the ${team.division} division. Their roster is on the [Teams page](teams.html). ${nextGame(text, d, team)}`;
+    return divisions(text, d);
+  }
+
+  function where(text, d) {
+    const g = d.games.find(isUpcoming);
+    const v = g?.venue || CFG.VENUE;
+    return `Games are at ${v}${CFG.VENUE && v !== CFG.VENUE ? '' : ' in Milton'}. Each game's rink is listed on the [Schedule page](schedule.html).`;
+  }
+
+  function contact() {
+    const email = window.IVY_CONTENT?.['footer.email'] || CFG.CONTACT_EMAIL;
+    return `For anything I can't answer (refunds, roster moves, spares) email the commissioners at [${email}](mailto:${email}).`;
+  }
+
+  function news(text, d) {
+    if (!d.news.length) return 'No league news posted at the moment.';
+    return `Latest from the league:\n${list(d.news.map(n => `[${n.title}](news.html?id=${n.id})`))}`;
+  }
+
+  const HELP = "I can tell you when your team plays next, recent scores, standings, scoring leaders, how to register and what it costs, or where we play. Try \"when do the Lagers play next?\"";
+
+  /* Order matters: the first rule whose pattern matches wins. */
+  const RULES = [
+    { re: /^(hi|hey|hello|yo|good (morning|afternoon|evening|day))\b[\s!.]*$/i, fn: () => `Good day. ${HELP}` },
+    { re: /\b(thanks|thank you|cheers|thx|ty)\b/i, fn: () => 'My pleasure. Anything else?' },
+    { re: /\b(regist|sign ?up|join|price|cost|fee|how much|pay|stripe|spot)/i, fn: register },
+    { re: /\b(scor(ing|er)s? lead|top scor|leading scor|points lead|most (goals|points)|scorers?|leaders?)\b/i, fn: scorers, async: true },
+    { re: /\b(standing|first place|1st place|table|rank|record|leading|on top|best team)/i, fn: standings },
+    { re: /\b(live|right now|on the ice|currently)\b/i, fn: liveNow },
+    { re: /\b(where|venue|rink|arena|address|location|park)/i, fn: where },
+    { re: /\b(last|result|final|won|win|lost|lose|beat|did .* do|score)/i, fn: lastResult, team: true },
+    { re: /\b(next|when|play|schedule|game|tonight|today|tomorrow|this week)/i, fn: nextGame, team: true, askTeam: /\b(my|our|we|i)\b/i },
+    { re: /\b(division|league|level|skill|beginner|competitive)/i, fn: divisions },
+    { re: /\b(teams?|roster|line ?up)\b/i, fn: teamsAnswer, team: true },
+    { re: /\b(contact|email|refund|commissioner|question|help me|talk to)/i, fn: contact },
+    { re: /\b(news|announce|update)/i, fn: news }
+  ];
+
+  async function answer(text) {
+    const d = await data();
+    const named = findTeam(text, d);
+    if (named) remember(named.id);
+
+    // Reply to "which team are you on?"
+    if (pending && named) {
+      const fn = pending; pending = null;
+      return fn(text, d, named);
+    }
+    pending = null;
+
+    const rule = RULES.find(r => r.re.test(text));
+    if (!rule) {
+      if (named) return teamsAnswer(text, d, named);
+      return `I'm not sure I follow. ${HELP}`;
+    }
+    let team = null;
+    if (rule.team) {
+      team = named || (rule.askTeam?.test(text) ? d.byId[recalled()] : null);
+      if (!team && rule.askTeam?.test(text)) return askTeam(rule.fn, d);
+    }
+    return rule.fn(text, d, team);
+  }
+
+  function teamChips(teams) {
+    const wrap = document.getElementById('conrad-chips');
+    wrap.innerHTML = teams.map(t =>
+      `<button class="text-xs px-3 py-1.5 rounded-full btn-quiet" data-q="${window.Ivy.esc(t.name)}">${window.Ivy.esc(t.name)}</button>`).join('');
+    wrap.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { wrap.innerHTML = ''; send(b.dataset.q); });
   }
 
   async function send(text) {
@@ -137,20 +348,10 @@
     history.push({ role: 'user', content: text });
 
     try {
-      const ctx = await context();
-      const res = await fetch(`${CFG.SUPABASE_URL}/functions/v1/${CFG.CONRAD_FUNCTION}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${CFG.SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({ messages: history.slice(-12), context: ctx })
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      const [reply] = await Promise.all([answer(text), new Promise(r => setTimeout(r, 350))]);
       dots.remove();
-      bubble('assistant', data.reply);
-      history.push({ role: 'assistant', content: data.reply });
+      bubble('assistant', reply);
+      history.push({ role: 'assistant', content: reply });
     } catch (err) {
       dots.remove();
       bubble('assistant',
