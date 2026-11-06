@@ -23,29 +23,30 @@
   function mount() {
     const el = document.createElement('div');
     el.innerHTML = `
-      <button id="conrad-open" aria-label="Ask Conrad"
-        class="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full pl-4 pr-5 py-3 text-white shadow-lg"
-        style="background: var(--ivy);">
-        <span class="inline-block h-6 w-6 rounded-full" style="background: var(--brass)"></span>
-        <span class="text-sm font-semibold">Ask Conrad</span>
+      <button id="conrad-open" aria-label="Ask Conrad" class="conrad-launch">
+        <span class="conrad-orb" aria-hidden="true"><i></i><i></i><b></b></span>
+        <span class="conrad-launch-label">Ask Conrad</span>
       </button>
 
-      <section id="conrad-panel" role="dialog" aria-label="Conrad, league concierge"
-        class="hidden fixed bottom-5 right-5 z-50 w-[min(24rem,92vw)] h-[min(34rem,80vh)] bg-white rounded-lg overflow-hidden flex flex-col"
-        style="border:1px solid var(--line)">
-        <header class="crest-field text-white px-4 py-3 flex items-center justify-between">
-          <div>
-            <p class="display text-base leading-none">Conrad</p>
-            <p class="text-[11px] text-white/70 mt-1">League concierge</p>
+      <section id="conrad-panel" role="dialog" aria-label="Conrad, league concierge" class="hidden conrad-hud">
+        <span class="hud-corner tl" aria-hidden="true"></span><span class="hud-corner tr" aria-hidden="true"></span>
+        <span class="hud-corner bl" aria-hidden="true"></span><span class="hud-corner br" aria-hidden="true"></span>
+        <header class="hud-head">
+          <span class="conrad-orb sm" aria-hidden="true"><i></i><i></i><b></b></span>
+          <div class="flex-1 min-w-0">
+            <p class="hud-name">CONRAD</p>
+            <p class="hud-status"><span class="hud-dot"></span><span id="conrad-status">Online · League concierge</span></p>
           </div>
-          <button id="conrad-close" aria-label="Close" class="text-white/80 hover:text-white text-xl leading-none">&times;</button>
+          <button id="conrad-close" aria-label="Close" class="hud-close">&times;</button>
         </header>
-        <div id="conrad-log" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3"></div>
+        <div class="hud-rule" aria-hidden="true"></div>
+        <div id="conrad-log" class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3" aria-live="polite"></div>
         <div id="conrad-chips" class="px-4 pb-2 flex flex-wrap gap-2"></div>
-        <form id="conrad-form" class="border-t p-3 flex gap-2" style="border-color: var(--line)">
+        <form id="conrad-form" class="hud-form">
           <label class="sr-only" for="conrad-input">Message Conrad</label>
-          <input id="conrad-input" class="field !py-2" autocomplete="off" placeholder="Ask about schedules, teams, sign-up…">
-          <button class="btn btn-primary !py-2 !px-4">Send</button>
+          <span class="hud-prompt" aria-hidden="true">&gt;</span>
+          <input id="conrad-input" class="hud-input" autocomplete="off" placeholder="Ask about schedules, teams, sign-up…">
+          <button class="hud-send">Send</button>
         </form>
       </section>`;
     document.body.appendChild(el);
@@ -94,7 +95,7 @@
     const wrap = document.getElementById('conrad-chips');
     const list = team ? [`When do the ${team} play next?`, ...SUGGESTIONS.slice(1)] : SUGGESTIONS;
     wrap.innerHTML = list.map(s =>
-      `<button class="text-xs px-3 py-1.5 rounded-full btn-quiet" data-q="${s}">${s}</button>`).join('');
+      `<button class="hud-chip" data-q="${s}">${s}</button>`).join('');
     wrap.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { wrap.innerHTML = ''; send(b.dataset.q); });
   }
 
@@ -122,8 +123,13 @@
     const log = document.getElementById('conrad-log');
     const d = document.createElement('div');
     d.className = 'conrad-bubble conrad-bot conrad-typing';
-    d.innerHTML = '<span></span><span></span><span></span>';
+    d.innerHTML = '<span></span><span></span><span></span><em>Checking the league records</em>';
     log.appendChild(d); log.scrollTop = log.scrollHeight;
+    const panel = document.getElementById('conrad-panel');
+    const status = document.getElementById('conrad-status');
+    panel.classList.add('is-thinking'); status.textContent = 'Working…';
+    const remove = d.remove.bind(d);
+    d.remove = () => { remove(); panel.classList.remove('is-thinking'); status.textContent = 'Online · League concierge'; };
     return d;
   }
 
@@ -410,7 +416,7 @@
   function teamChips(teams) {
     const wrap = document.getElementById('conrad-chips');
     wrap.innerHTML = teams.map(t =>
-      `<button class="text-xs px-3 py-1.5 rounded-full btn-quiet" data-q="${window.Ivy.esc(t.name)}">${window.Ivy.esc(t.name)}</button>`).join('');
+      `<button class="hud-chip" data-q="${window.Ivy.esc(t.name)}">${window.Ivy.esc(t.name)}</button>`).join('');
     wrap.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { wrap.innerHTML = ''; send(b.dataset.q); });
   }
 

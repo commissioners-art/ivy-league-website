@@ -141,18 +141,126 @@ body {
 }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 
-/* ---- Conrad ------------------------------------------------ */
-#conrad-panel { box-shadow: 0 24px 60px -20px rgba(5,46,25,.45); }
-.conrad-bubble { max-width: 85%; padding: .6rem .8rem; border-radius: 10px; font-size: .9rem; line-height: 1.5; }
-.conrad-user { background: var(--ivy); color: #fff; margin-left: auto; border-bottom-right-radius: 2px; }
-.conrad-bot  { background: var(--ice); color: var(--ink); border-bottom-left-radius: 2px; }
-.conrad-typing span {
-  display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 99px;
-  background: var(--ivy-sprig); animation: blink 1.2s infinite;
+/* ---- Conrad: heads-up display -----------------------------
+   Dark glass panel, glowing ring "orb", thin HUD lines. Glow is
+   drawn from the crest palette: a lit ivy green plus brass.
+---------------------------------------------------------------- */
+:root {
+  --hud-glow: #3FE08F;                 /* ivy, lit up */
+  --hud-glow-dim: rgba(63, 224, 143, .35);
+  --hud-bg: rgba(3, 20, 12, .94);
+  --hud-text: #DDF5E7;
+  --hud-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 }
-.conrad-typing span:nth-child(2) { animation-delay: .2s; }
-.conrad-typing span:nth-child(3) { animation-delay: .4s; }
-@keyframes blink { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
+
+/* Orb: two counter-rotating arcs around a breathing core */
+.conrad-orb { position: relative; display: inline-block; width: 44px; height: 44px; flex: none; }
+.conrad-orb.sm { width: 34px; height: 34px; }
+.conrad-orb i, .conrad-orb b { position: absolute; border-radius: 50%; }
+.conrad-orb i:nth-child(1) {
+  inset: 0; border: 2px solid transparent;
+  border-top-color: var(--hud-glow); border-right-color: var(--hud-glow-dim);
+  animation: hud-spin 3.2s linear infinite;
+  filter: drop-shadow(0 0 4px var(--hud-glow));
+}
+.conrad-orb i:nth-child(2) {
+  inset: 5px; border: 1.5px dashed var(--brass);
+  animation: hud-spin 6s linear infinite reverse; opacity: .85;
+}
+.conrad-orb b {
+  inset: 30%; background: radial-gradient(circle, #fff 0%, var(--hud-glow) 45%, transparent 75%);
+  animation: hud-breathe 2.6s ease-in-out infinite;
+}
+.is-thinking .conrad-orb i:nth-child(1) { animation-duration: .9s; }
+.is-thinking .conrad-orb i:nth-child(2) { animation-duration: 1.6s; }
+.is-thinking .conrad-orb b { animation-duration: .8s; }
+@keyframes hud-spin { to { transform: rotate(360deg); } }
+@keyframes hud-breathe { 0%,100% { transform: scale(.8); opacity: .75; } 50% { transform: scale(1.1); opacity: 1; } }
+
+/* Launcher */
+.conrad-launch {
+  position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 40;
+  display: flex; align-items: center; gap: .6rem; padding: .35rem 1.1rem .35rem .35rem;
+  background: var(--hud-bg); color: var(--hud-text); border: 1px solid var(--hud-glow-dim);
+  border-radius: 999px; box-shadow: 0 0 0 1px rgba(0,0,0,.4), 0 0 24px -6px var(--hud-glow);
+  font-family: var(--hud-mono); font-size: .75rem; letter-spacing: .14em; text-transform: uppercase;
+  transition: box-shadow .2s, transform .2s;
+}
+.conrad-launch:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(0,0,0,.4), 0 0 32px -4px var(--hud-glow); }
+.conrad-launch:focus-visible, .hud-close:focus-visible, .hud-send:focus-visible, .hud-chip:focus-visible {
+  outline: 2px solid var(--brass); outline-offset: 2px;
+}
+
+/* Panel */
+.conrad-hud {
+  position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 50;
+  width: min(24rem, 92vw); height: min(34rem, 80vh);
+  display: flex; flex-direction: column; overflow: hidden;
+  background:
+    repeating-linear-gradient(0deg, rgba(63,224,143,.035) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 60% at 50% 0%, rgba(63,224,143,.12), transparent 60%),
+    var(--hud-bg);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  color: var(--hud-text); border: 1px solid var(--hud-glow-dim); border-radius: 6px;
+  box-shadow: 0 30px 70px -20px rgba(0,0,0,.7), 0 0 40px -12px var(--hud-glow);
+  animation: hud-open .28s cubic-bezier(.2,.7,.3,1);
+}
+.conrad-hud.hidden { display: none; }
+@keyframes hud-open { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+.hud-corner { position: absolute; width: 14px; height: 14px; border: 2px solid var(--brass); pointer-events: none; }
+.hud-corner.tl { top: 4px; left: 4px; border-right: 0; border-bottom: 0; }
+.hud-corner.tr { top: 4px; right: 4px; border-left: 0; border-bottom: 0; }
+.hud-corner.bl { bottom: 4px; left: 4px; border-right: 0; border-top: 0; }
+.hud-corner.br { bottom: 4px; right: 4px; border-left: 0; border-top: 0; }
+
+.hud-head { display: flex; align-items: center; gap: .75rem; padding: .9rem 1rem .7rem; }
+.hud-name { font-family: var(--hud-mono); font-weight: 700; letter-spacing: .32em; font-size: .95rem; color: #fff;
+  text-shadow: 0 0 10px var(--hud-glow-dim); }
+.hud-status { font-family: var(--hud-mono); font-size: .65rem; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--hud-glow); display: flex; align-items: center; gap: .4rem; margin-top: .2rem; }
+.hud-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--hud-glow); box-shadow: 0 0 6px var(--hud-glow);
+  animation: pulse 1.6s ease-in-out infinite; }
+.hud-close { color: rgba(221,245,231,.7); font-size: 1.4rem; line-height: 1; padding: 0 .25rem; }
+.hud-close:hover { color: #fff; }
+.hud-rule { height: 1px; margin: 0 1rem;
+  background: linear-gradient(90deg, transparent, var(--hud-glow) 20%, var(--brass) 50%, var(--hud-glow) 80%, transparent); opacity: .6; }
+
+/* Messages */
+.conrad-bubble { max-width: 88%; padding: .6rem .8rem; font-size: .9rem; line-height: 1.55; }
+.conrad-bot {
+  color: var(--hud-text); background: rgba(63,224,143,.06);
+  border-left: 2px solid var(--hud-glow); border-radius: 0 6px 6px 0;
+}
+.conrad-user {
+  margin-left: auto; color: #fff; background: rgba(192,138,43,.14);
+  border-right: 2px solid var(--brass); border-radius: 6px 0 0 6px;
+}
+.conrad-hud a { color: var(--brass-soft); }
+.conrad-typing { display: flex; align-items: center; gap: 4px; }
+.conrad-typing span { width: 3px; height: 12px; background: var(--hud-glow); animation: hud-bars 1s ease-in-out infinite; }
+.conrad-typing span:nth-child(2) { animation-delay: .15s; }
+.conrad-typing span:nth-child(3) { animation-delay: .3s; }
+.conrad-typing em { font-style: normal; font-family: var(--hud-mono); font-size: .7rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--hud-glow); margin-left: .5rem; }
+@keyframes hud-bars { 0%,100% { transform: scaleY(.3); opacity: .5; } 50% { transform: scaleY(1); opacity: 1; } }
+
+.hud-chip { font-family: var(--hud-mono); font-size: .7rem; letter-spacing: .04em; padding: .35rem .7rem;
+  color: var(--hud-text); border: 1px solid var(--hud-glow-dim); border-radius: 3px; background: rgba(63,224,143,.04); }
+.hud-chip:hover { border-color: var(--hud-glow); color: #fff; box-shadow: 0 0 12px -4px var(--hud-glow); }
+
+/* Input */
+.hud-form { display: flex; align-items: center; gap: .5rem; padding: .7rem .8rem; border-top: 1px solid var(--hud-glow-dim); }
+.hud-prompt { font-family: var(--hud-mono); color: var(--hud-glow); }
+.hud-input { flex: 1; min-width: 0; background: transparent; color: #fff; border: 0; outline: 0; font-size: .9rem; padding: .45rem 0; }
+.hud-input::placeholder { color: rgba(221,245,231,.45); }
+.hud-form:focus-within { box-shadow: inset 0 1px 0 var(--hud-glow); }
+.hud-send { font-family: var(--hud-mono); font-size: .7rem; letter-spacing: .16em; text-transform: uppercase;
+  padding: .5rem .8rem; color: var(--ink); background: var(--hud-glow); border-radius: 3px; font-weight: 700; }
+.hud-send:hover { background: #fff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .conrad-orb i, .conrad-orb b, .hud-dot, .conrad-typing span, .conrad-hud { animation: none !important; }
+}
 
 /* Hero entrance — one orchestrated moment, nothing else animates on load */
 .rise { opacity: 0; transform: translateY(14px); animation: rise .7s cubic-bezier(.2,.7,.3,1) forwards; }
