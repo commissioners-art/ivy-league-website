@@ -88,6 +88,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="assets/js/config.js"></script>
 <script src="assets/js/app.js"></script>
+<script src="assets/js/league.js"></script>
 <script src="assets/js/conrad.js"></script>
 <script>
 document.addEventListener('ivy:ready', async () => {
@@ -110,7 +111,7 @@ document.addEventListener('ivy:ready', async () => {
     const isLive = game.status === 'live';
     box.innerHTML = `
       <p class="text-xs ${isLive ? 'pulse-live text-red-300' : 'text-white/60'} mb-5">
-        ${isLive ? `Live · ${ordinal(game.period)} period` : `Next up · ${fmtDate(game.starts_at)}`}
+        ${isLive ? `Live · ${IvyGameTime.label(game, ordinal)}` : `Next up · ${fmtDate(game.starts_at)}`}
       </p>
       <div class="flex items-center justify-between gap-4">
         <div class="flex-1"><p class="display text-xl">${esc(game.away?.name ?? 'TBD')}</p></div>

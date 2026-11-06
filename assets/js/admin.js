@@ -9,11 +9,13 @@ const TZ = IVY_CONFIG.TIMEZONE || 'America/Toronto';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDT = iso => new Date(iso).toLocaleString('en-CA', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ });
-const fmtClock = s => `${String(Math.floor(Math.max(0, s) / 60)).padStart(2, '0')}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
 const ordinal = n => ['', '1st', '2nd', '3rd', 'OT', 'SO'][n] || `${n}`;
 const toLocalInput = iso => { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 
 let me = null, view = 'score', tick = null;
+/* keyboard shortcuts for the open game sheet (set by gameSheet, cleared on every render) */
+let sheetKeys = null;
+document.addEventListener('keydown', e => sheetKeys && sheetKeys(e));
 
 function toast(text, ok = true) {
   const t = document.createElement('div');
@@ -71,6 +73,7 @@ async function boot(session) {
 
 function render() {
   clearInterval(tick);
+  sheetKeys = null;
   document.querySelectorAll('#tabs [data-tab]').forEach(b => {
     b.className = `px-4 py-2 text-sm font-semibold rounded-sm whitespace-nowrap ${b.dataset.tab === view ? 'bg-white/20 text-white' : 'text-white/65 hover:text-white'}`;
   });
@@ -86,6 +89,8 @@ const mount = html => {
 
 /* ================= 1. Scorekeeping ================= */
 async function scoreView() {
+  clearInterval(tick);
+  sheetKeys = null;
   const from = new Date(); from.setHours(0, 0, 0, 0);
   const { data: games } = await sb.from('games')
     .select('*, home:home_team_id(id,name), away:away_team_id(id,name)')
@@ -114,13 +119,53 @@ async function scoreView() {
   });
 }
 
+/* Game sheet. No clock to run: the scorekeeper types the period and
+   game time for each entry. Both are prefilled from an estimate based
+   on the scheduled start (see league.js) so usually they just adjust. */
+const INFRACTIONS = ['Tripping', 'Slashing', 'Hooking', 'Holding', 'Interference', 'Roughing', 'High-sticking',
+  'Cross-checking', 'Boarding', 'Charging', 'Too many men', 'Delay of game', 'Unsportsmanlike conduct',
+  'Body checking', 'Fighting', 'Abuse of officials', 'Game misconduct', 'Match penalty'];
+
+/* '12:34', '1234', '934', '9:4' -> 'MM:SS'; null if it isn't a time */
+function parseGameTime(v) {
+  v = String(v || '').trim();
+  let m, s;
+  if (/^\d{1,2}:\d{1,2}$/.test(v)) [m, s] = v.split(':').map(Number);
+  else if (/^\d{3,4}$/.test(v)) { m = Number(v.slice(0, -2)); s = Number(v.slice(-2)); }
+  else if (/^\d{1,2}$/.test(v)) { m = Number(v); s = 0; }
+  else return null;
+  if (s > 59 || m > 60) return null;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 async function gameSheet(id) {
+  clearInterval(tick);
   const { data: g } = await sb.from('games').select('*, home:home_team_id(id,name), away:away_team_id(id,name)').eq('id', id).single();
   const { data: players } = await sb.from('players').select('id,first_name,last_name,jersey_number,team_id')
-    .in('team_id', [g.home_team_id, g.away_team_id].filter(Boolean));
+    .in('team_id', [g.home_team_id, g.away_team_id].filter(Boolean)).order('jersey_number', { nullsFirst: false });
 
-  const roster = tid => (players || []).filter(p => p.team_id === tid)
-    .map(p => `<option value="${p.id}">#${p.jersey_number ?? '–'} ${esc(p.first_name)} ${esc(p.last_name)}</option>`).join('');
+  const sides = [g.away_team_id, g.home_team_id].filter(Boolean);
+  const teamName = tid => tid === g.home_team_id ? (g.home?.name ?? 'Home') : (g.away?.name ?? 'Away');
+  const pName = p => `#${p.jersey_number ?? '–'} ${p.first_name} ${p.last_name}`;
+  let suspBy = new Map(), suspList = [];
+
+  /* One dropdown with both benches, grouped by team. The team is taken from the player. */
+  const playerOptions = ({ unlisted = false, team = null, exclude = null, blank = '' } = {}) =>
+    (blank ? `<option value="">${esc(blank)}</option>` : '') +
+    sides.filter(t => !team || t === team).map(tid => `
+      <optgroup label="${esc(teamName(tid))}">
+        ${(players || []).filter(p => p.team_id === tid && p.id !== exclude).map(p =>
+          `<option value="${p.id}">${esc(pName(p))}${suspBy.has(p.id) ? ' (SUSPENDED)' : ''}</option>`).join('')}
+        ${unlisted ? `<option value="team:${tid}">${esc(teamName(tid))}: player not listed</option>` : ''}
+      </optgroup>`).join('');
+  const pick = v => v?.startsWith('team:')
+    ? { team: v.slice(5), player: null }
+    : { team: (players || []).find(p => p.id === v)?.team_id ?? null, player: v || null };
+
+  const periodOpts = sel => [1, 2, 3, 4, 5].map(n => `<option value="${n}" ${n === sel ? 'selected' : ''}>${ordinal(n)}</option>`).join('');
+  const whenFields = () => `
+    <select data-when="period" class="field" aria-label="Period">${periodOpts(g.period || 1)}</select>
+    <input data-when="time" class="field tnum" placeholder="Time, e.g. 12:34" inputmode="numeric" maxlength="5" aria-label="Game time" autocomplete="off">`;
 
   mount(`
     <button id="back" class="text-sm font-semibold mb-4" style="color:var(--ivy)">← All games</button>
@@ -130,75 +175,86 @@ async function gameSheet(id) {
         <div>
           <p class="display text-xl">${esc(g.away?.name ?? 'Away')}</p>
           <div class="flex items-center justify-center gap-2 mt-3">
-            <button class="btn btn-ghost !px-3 !py-1" data-score="away" data-delta="-1">−</button>
+            <button class="btn btn-ghost !px-3 !py-1" data-score="away" data-delta="-1" title="Correct the score">−</button>
             <span id="away-score" class="scoreline text-4xl w-16">${g.away_score}</span>
-            <button class="btn btn-ghost !px-3 !py-1" data-score="away" data-delta="1">+</button>
+            <button class="btn btn-ghost !px-3 !py-1" data-score="away" data-delta="1" title="Correct the score">+</button>
           </div>
         </div>
         <div>
-          <p id="clock" class="scoreline text-3xl" style="color:var(--brass-soft)">${fmtClock(g.clock_seconds)}</p>
-          <p class="text-xs text-white/60 mt-1">${ordinal(g.period)} period</p>
+          <p id="est-period" class="scoreline text-2xl" style="color:var(--brass-soft)"></p>
+          <p id="est-time" class="text-xs text-white/60 mt-1"></p>
         </div>
         <div>
           <p class="display text-xl">${esc(g.home?.name ?? 'Home')}</p>
           <div class="flex items-center justify-center gap-2 mt-3">
-            <button class="btn btn-ghost !px-3 !py-1" data-score="home" data-delta="-1">−</button>
+            <button class="btn btn-ghost !px-3 !py-1" data-score="home" data-delta="-1" title="Correct the score">−</button>
             <span id="home-score" class="scoreline text-4xl w-16">${g.home_score}</span>
-            <button class="btn btn-ghost !px-3 !py-1" data-score="home" data-delta="1">+</button>
+            <button class="btn btn-ghost !px-3 !py-1" data-score="home" data-delta="1" title="Correct the score">+</button>
           </div>
         </div>
       </div>
+      <p class="text-[11px] text-white/45 text-center mt-4">Goals update the score automatically. Use − / + only to correct it.</p>
     </div>
 
-    <div class="grid lg:grid-cols-[1fr,1.2fr] gap-5">
-      <!-- clock + status -->
-      <div class="panel p-5 grid gap-4 h-fit">
-        <div class="rule">Clock &amp; period</div>
-        <div class="flex gap-2">
-          <button id="clock-toggle" class="btn ${g.clock_running ? 'btn-brass' : 'btn-primary'} flex-1">${g.clock_running ? 'Stop clock' : 'Start clock'}</button>
-          <button id="clock-set" class="btn btn-quiet">Set time</button>
-        </div>
-        <div class="flex gap-2">
-          <button class="btn btn-quiet flex-1" data-period="-1">− Period</button>
-          <button class="btn btn-quiet flex-1" data-period="1">+ Period</button>
-        </div>
-        <div class="pt-3 border-t grid gap-2" style="border-color:var(--line)">
+    <div class="grid lg:grid-cols-[1fr,1.4fr] gap-5">
+      <div class="grid gap-5 h-fit">
+        <div class="panel p-5 grid gap-2">
+          <div class="rule mb-1">Game status</div>
           <button id="go-live" class="btn ${g.status === 'live' ? 'btn-quiet' : 'btn-primary'}">${g.status === 'live' ? 'Game is live' : 'Start game (go live)'}</button>
           <button id="go-final" class="btn btn-quiet">Finalize game</button>
         </div>
+
+        <div class="panel p-5 text-xs text-gray-600 grid gap-1">
+          <div class="rule mb-1">Keyboard</div>
+          <p><kbd class="font-bold">G</kbd> goal · <kbd class="font-bold">P</kbd> penalty · <kbd class="font-bold">S</kbd> suspension</p>
+          <p>Each jumps to that form's time box. <kbd class="font-bold">Tab</kbd> through the fields, <kbd class="font-bold">Enter</kbd> saves.</p>
+          <p>Time can be typed as 12:34 or 1234. Period and time are prefilled from the scheduled start; just adjust.</p>
+        </div>
       </div>
 
-      <!-- event entry -->
       <div class="panel p-5 grid gap-5">
-        <div>
-          <div class="rule mb-3">Record a goal</div>
+        <div data-form="goal">
+          <div class="rule mb-3">Goal</div>
           <div class="grid sm:grid-cols-2 gap-3">
-            <select id="goal-team" class="field">
-              <option value="${g.away_team_id}">${esc(g.away?.name ?? 'Away')}</option>
-              <option value="${g.home_team_id}">${esc(g.home?.name ?? 'Home')}</option>
-            </select>
-            <select id="goal-scorer" class="field"></select>
-            <select id="goal-a1" class="field"><option value="">First assist (optional)</option></select>
-            <select id="goal-a2" class="field"><option value="">Second assist (optional)</option></select>
+            ${whenFields()}
+            <select id="goal-scorer" class="field sm:col-span-2" aria-label="Scorer"></select>
+            <select id="goal-a1" class="field" aria-label="First assist"></select>
+            <select id="goal-a2" class="field" aria-label="Second assist"></select>
           </div>
-          <button id="add-goal" class="btn btn-primary mt-3 w-full">Add goal &amp; update score</button>
+          <button id="add-goal" data-submit class="btn btn-primary mt-3 w-full">Add goal &amp; update score</button>
         </div>
 
-        <div class="pt-4 border-t" style="border-color:var(--line)">
-          <div class="rule mb-3">Record a penalty</div>
+        <div data-form="pen" class="pt-4 border-t" style="border-color:var(--line)">
+          <div class="rule mb-3">Penalty</div>
           <div class="grid sm:grid-cols-2 gap-3">
-            <select id="pen-team" class="field">
-              <option value="${g.away_team_id}">${esc(g.away?.name ?? 'Away')}</option>
-              <option value="${g.home_team_id}">${esc(g.home?.name ?? 'Home')}</option>
-            </select>
-            <select id="pen-player" class="field"></select>
-            <input id="pen-infraction" class="field" placeholder="Infraction (tripping, slashing…)">
+            ${whenFields()}
+            <select id="pen-player" class="field sm:col-span-2" aria-label="Player"></select>
+            <input id="pen-infraction" class="field" list="infractions" placeholder="Call (tripping, slashing…)" autocomplete="off">
             <select id="pen-minutes" class="field">
               <option value="2">2 minutes</option><option value="4">4 minutes</option>
-              <option value="5">5 minutes</option><option value="10">10 — misconduct</option>
+              <option value="5">5 minutes</option><option value="10">10, misconduct</option>
             </select>
           </div>
-          <button id="add-pen" class="btn btn-brass mt-3 w-full">Add penalty</button>
+          <datalist id="infractions">${INFRACTIONS.map(i => `<option value="${i}">`).join('')}</datalist>
+          <button id="add-pen" data-submit class="btn btn-brass mt-3 w-full">Add penalty</button>
+        </div>
+
+        <div data-form="sus" class="pt-4 border-t" style="border-color:var(--line)">
+          <div class="rule mb-3">Suspension</div>
+          <div class="grid sm:grid-cols-2 gap-3">
+            <select id="sus-player" class="field sm:col-span-2" aria-label="Player"></select>
+            <select id="sus-kind" class="field">
+              <option value="games">Number of games</option>
+              <option value="until">Until a date</option>
+              <option value="open">Until further notice</option>
+            </select>
+            <input id="sus-games" type="number" min="1" max="99" value="1" class="field" aria-label="Games">
+            <input id="sus-until" type="date" class="field hidden" aria-label="Suspended until">
+            <input id="sus-reason" class="field sm:col-span-2" placeholder="Reason (e.g. match penalty, fighting)" autocomplete="off">
+          </div>
+          <button id="add-sus" data-submit class="btn btn-quiet mt-3 w-full !text-red-800">Suspend player</button>
+          <p class="text-xs text-gray-500 mt-2">Shows on the team rosters right away. Game suspensions count down as the player's team plays.</p>
+          <div id="sus-list" class="grid mt-3"></div>
         </div>
       </div>
     </div>
@@ -208,128 +264,237 @@ async function gameSheet(id) {
       <div id="sheet" class="grid"></div>
     </div>`);
 
-  /* roster dropdowns follow the team selectors */
-  const fillRosters = () => {
-    const gt = document.getElementById('goal-team').value;
-    document.getElementById('goal-scorer').innerHTML = roster(gt);
-    document.getElementById('goal-a1').innerHTML = '<option value="">First assist (optional)</option>' + roster(gt);
-    document.getElementById('goal-a2').innerHTML = '<option value="">Second assist (optional)</option>' + roster(gt);
-    document.getElementById('pen-player').innerHTML = roster(document.getElementById('pen-team').value);
-  };
-  document.getElementById('goal-team').onchange = fillRosters;
-  document.getElementById('pen-team').onchange = fillRosters;
-  fillRosters();
+  const $ = s => document.getElementById(s);
+  let state = { ...g };
 
-  document.getElementById('back').onclick = () => { clearInterval(tick); scoreView(); };
+  /* ---- player dropdowns ---- */
+  const fillAssists = () => {
+    const { team, player } = pick($('goal-scorer').value);
+    const keep = [$('goal-a1').value, $('goal-a2').value];
+    $('goal-a1').innerHTML = playerOptions({ team, exclude: player, blank: 'First assist (optional)' });
+    $('goal-a2').innerHTML = playerOptions({ team, exclude: player, blank: 'Second assist (optional)' });
+    $('goal-a1').value = keep[0]; $('goal-a2').value = keep[1];
+    if ($('goal-a1').value !== keep[0]) $('goal-a1').value = '';
+    if ($('goal-a2').value !== keep[1]) $('goal-a2').value = '';
+  };
+  const fillPlayers = () => {
+    const keep = { scorer: $('goal-scorer').value, pen: $('pen-player').value, sus: $('sus-player').value };
+    $('goal-scorer').innerHTML = playerOptions({ unlisted: true, blank: 'Scorer' });
+    $('pen-player').innerHTML = playerOptions({ unlisted: true, blank: 'Player' });
+    $('sus-player').innerHTML = playerOptions({ blank: 'Player to suspend' });
+    $('goal-scorer').value = keep.scorer; $('pen-player').value = keep.pen; $('sus-player').value = keep.sus;
+    fillAssists();
+  };
+  $('goal-scorer').onchange = fillAssists;
+
+  /* ---- estimated period/time: header + prefill ---- */
+  const when = form => document.querySelector(`[data-form="${form}"]`);
+  const showEstimate = () => {
+    const e = IvyGameTime.estimate(state.starts_at, state.period);
+    $('est-period').textContent = `${ordinal(e.period)} period`;
+    $('est-time').textContent = e.phase === 'pre' ? 'Not started yet (by the schedule)'
+      : e.phase === 'over' ? 'Scheduled time is up'
+      : e.left == null ? '' : `about ${e.clock} left, by the schedule`;
+    return e;
+  };
+  const prefill = form => {
+    const e = showEstimate(), box = when(form);
+    if (!box) return;
+    box.querySelector('[data-when="period"]').value = String(e.period);
+    if (!box.querySelector('[data-when="time"]').value && e.phase === 'play' && e.clock) box.querySelector('[data-when="time"]').placeholder = `Time, e.g. ${e.clock}`;
+  };
+  ['goal', 'pen'].forEach(prefill);
+  tick = setInterval(showEstimate, 15000);
+  ['goal', 'pen'].forEach(f => when(f).querySelector('[data-when="time"]').addEventListener('focus', ev => {
+    // Fill the estimate on focus so it's one keystroke to accept or overwrite.
+    const e = IvyGameTime.estimate(state.starts_at, state.period);
+    if (!ev.target.value && e.phase === 'play' && e.clock) { ev.target.value = e.clock; ev.target.select(); }
+  }));
+
+  /* Read period + time from a form; null (with a message) if the time is missing or wrong */
+  const readWhen = form => {
+    const box = when(form);
+    const period = parseInt(box.querySelector('[data-when="period"]').value, 10);
+    const raw = box.querySelector('[data-when="time"]').value;
+    const clock = parseGameTime(raw);
+    if (!clock && !(period === 5 && !raw.trim())) {
+      toast('Enter the game time, like 12:34.', false);
+      box.querySelector('[data-when="time"]').focus();
+      return null;
+    }
+    return { period, clock: clock || '' };
+  };
+  const clearWhen = form => { when(form).querySelector('[data-when="time"]').value = ''; ['goal', 'pen'].forEach(prefill); };
 
   const save = async patch => {
     const { error } = await sb.from('games').update(patch).eq('id', id);
-    if (error) toast('Could not save — check your connection.', false);
+    if (error) toast('Could not save. Check your connection.', false);
+    else state = { ...state, ...patch };
     return !error;
   };
-
-  /* ---- live local clock ---- */
-  let state = { ...g };
-  const remaining = () => state.clock_running
-    ? Math.max(0, state.clock_seconds - (Date.now() - new Date(state.clock_updated_at).getTime()) / 1000)
-    : state.clock_seconds;
-  tick = setInterval(() => { document.getElementById('clock').textContent = fmtClock(remaining()); }, 250);
-
-  document.getElementById('clock-toggle').onclick = async () => {
-    const running = !state.clock_running;
-    const patch = { clock_running: running, clock_seconds: Math.round(remaining()), clock_updated_at: new Date().toISOString() };
-    if (await save(patch)) { state = { ...state, ...patch }; gameSheetRefreshButton(running); }
+  /* An entry moves the game along: it goes live, and the highest period entered becomes the game's period. */
+  const advance = async period => {
+    const patch = {};
+    if (state.status === 'scheduled') patch.status = 'live';
+    if (period > (state.period || 1)) patch.period = period;
+    if (Object.keys(patch).length) await save(patch);
+    if (patch.status) { $('go-live').textContent = 'Game is live'; $('go-live').className = 'btn btn-quiet'; }
   };
-  const gameSheetRefreshButton = running => {
-    const b = document.getElementById('clock-toggle');
-    b.textContent = running ? 'Stop clock' : 'Start clock';
-    b.className = `btn ${running ? 'btn-brass' : 'btn-primary'} flex-1`;
+  const setScore = async (field, val) => {
+    val = Math.max(0, val);
+    if (await save({ [field]: val })) $(field === 'home_score' ? 'home-score' : 'away-score').textContent = val;
   };
 
-  document.getElementById('clock-set').onclick = async () => {
-    const v = prompt('Time remaining in the period (mm:ss)', fmtClock(remaining()));
-    if (!v) return;
-    const [m, s] = v.split(':').map(n => parseInt(n, 10) || 0);
-    const patch = { clock_seconds: m * 60 + s, clock_updated_at: new Date().toISOString() };
-    if (await save(patch)) { state = { ...state, ...patch }; }
-  };
+  $('back').onclick = () => { clearInterval(tick); scoreView(); };
 
-  document.querySelectorAll('[data-period]').forEach(b => b.onclick = async () => {
-    const p = Math.max(1, Math.min(5, state.period + Number(b.dataset.period)));
-    const patch = { period: p, clock_seconds: 1200, clock_running: false, clock_updated_at: new Date().toISOString() };
-    if (await save(patch)) { state = { ...state, ...patch }; gameSheet(id); }
+  document.querySelectorAll('[data-score]').forEach(b => b.onclick = () => {
+    const field = b.dataset.score === 'home' ? 'home_score' : 'away_score';
+    setScore(field, state[field] + Number(b.dataset.delta));
   });
 
-  document.querySelectorAll('[data-score]').forEach(b => b.onclick = async () => {
-    const side = b.dataset.score, field = side === 'home' ? 'home_score' : 'away_score';
-    const val = Math.max(0, state[field] + Number(b.dataset.delta));
-    if (await save({ [field]: val })) {
-      state[field] = val;
-      document.getElementById(`${side}-score`).textContent = val;
-    }
-  });
-
-  document.getElementById('go-live').onclick = async () => {
-    if (await save({ status: 'live', clock_updated_at: new Date().toISOString() })) { toast('Game is live on the site.'); gameSheet(id); }
+  $('go-live').onclick = async () => {
+    if (await save({ status: 'live' })) { toast('Game is live on the site.'); gameSheet(id); }
   };
-  document.getElementById('go-final').onclick = async () => {
+  $('go-final').onclick = async () => {
     if (!confirm('Finalize this game? Standings will update.')) return;
-    if (await save({ status: 'final', clock_running: false })) { toast('Game finalized.'); clearInterval(tick); scoreView(); }
+    if (await save({ status: 'final' })) { toast('Game finalized.'); clearInterval(tick); scoreView(); }
   };
 
-  document.getElementById('add-goal').onclick = async () => {
-    const team = document.getElementById('goal-team').value;
-    const field = team === state.home_team_id ? 'home_score' : 'away_score';
+  /* ---- goal ---- */
+  $('add-goal').onclick = async () => {
+    const w = readWhen('goal'); if (!w) return;
+    const v = $('goal-scorer').value;
+    if (!v) { $('goal-scorer').focus(); return toast('Pick the scorer.', false); }
+    const { team, player } = pick(v);
     const { error } = await sb.from('game_events').insert({
-      game_id: id, team_id: team, type: 'goal',
-      player_id: document.getElementById('goal-scorer').value || null,
-      assist1_id: document.getElementById('goal-a1').value || null,
-      assist2_id: document.getElementById('goal-a2').value || null,
-      period: state.period, clock: fmtClock(remaining()), created_by: me.id
+      game_id: id, team_id: team, type: 'goal', player_id: player,
+      assist1_id: $('goal-a1').value || null, assist2_id: $('goal-a2').value || null,
+      period: w.period, clock: w.clock, created_by: me.id
     });
     if (error) return toast('Goal did not save.', false);
-    const val = state[field] + 1;
-    await save({ [field]: val });
-    state[field] = val;
-    document.getElementById(field === 'home_score' ? 'home-score' : 'away-score').textContent = val;
+    const field = team === state.home_team_id ? 'home_score' : 'away_score';
+    await setScore(field, state[field] + 1);
+    await advance(w.period);
+    $('goal-scorer').value = ''; fillAssists(); clearWhen('goal');
     toast('Goal recorded.');
     loadSheet();
   };
 
-  document.getElementById('add-pen').onclick = async () => {
+  /* ---- penalty ---- */
+  $('add-pen').onclick = async () => {
+    const w = readWhen('pen'); if (!w) return;
+    const v = $('pen-player').value;
+    if (!v) { $('pen-player').focus(); return toast('Pick the player.', false); }
+    const call = $('pen-infraction').value.trim();
+    if (!call) { $('pen-infraction').focus(); return toast('Enter the call.', false); }
+    const { team, player } = pick(v);
     const { error } = await sb.from('game_events').insert({
-      game_id: id, team_id: document.getElementById('pen-team').value, type: 'penalty',
-      player_id: document.getElementById('pen-player').value || null,
-      infraction: document.getElementById('pen-infraction').value,
-      minutes: parseInt(document.getElementById('pen-minutes').value, 10),
-      period: state.period, clock: fmtClock(remaining()), created_by: me.id
+      game_id: id, team_id: team, type: 'penalty', player_id: player,
+      infraction: call, minutes: parseInt($('pen-minutes').value, 10),
+      period: w.period, clock: w.clock, created_by: me.id
     });
     if (error) return toast('Penalty did not save.', false);
-    document.getElementById('pen-infraction').value = '';
+    await advance(w.period);
+    $('pen-player').value = ''; $('pen-infraction').value = ''; clearWhen('pen');
     toast('Penalty recorded.');
     loadSheet();
   };
 
+  /* ---- suspensions ---- */
+  $('sus-kind').onchange = () => {
+    $('sus-games').classList.toggle('hidden', $('sus-kind').value !== 'games');
+    $('sus-until').classList.toggle('hidden', $('sus-kind').value !== 'until');
+  };
+  $('add-sus').onclick = async () => {
+    const pid = $('sus-player').value;
+    if (!pid) { $('sus-player').focus(); return toast('Pick the player to suspend.', false); }
+    const kind = $('sus-kind').value;
+    const games = kind === 'games' ? parseInt($('sus-games').value, 10) : null;
+    const until = kind === 'until' ? $('sus-until').value : null;
+    if (kind === 'games' && !(games > 0)) return toast('Enter how many games.', false);
+    if (kind === 'until' && !until) return toast('Pick the date the suspension runs until.', false);
+    const { error } = await sb.from('suspensions').insert({
+      player_id: pid, team_id: pick(pid).team, game_id: id,
+      games, until_date: until, reason: $('sus-reason').value.trim() || null, created_by: me.id
+    });
+    if (error) return toast(/relation|does not exist|schema cache/i.test(error.message)
+      ? 'Suspensions are not set up in the database yet. Ask an admin to run the SQL.' : 'Suspension did not save.', false);
+    $('sus-player').value = ''; $('sus-reason').value = '';
+    toast('Suspension recorded. It now shows on the roster.');
+    loadSusp();
+  };
+
+  async function loadSusp() {
+    suspList = (await IvySusp.loadActive(sb)).filter(s => (players || []).some(p => p.id === s.player_id));
+    suspBy = IvySusp.byPlayer(suspList);
+    fillPlayers();
+    const byId = pid => (players || []).find(p => p.id === pid);
+    $('sus-list').innerHTML = suspList.length ? `<p class="text-xs font-bold text-gray-500 mb-1">Currently suspended</p>` + suspList.map(s => {
+      const p = byId(s.player_id);
+      return `
+      <div class="flex items-center gap-3 text-sm py-2 border-b" style="border-color:var(--line)">
+        <span class="flex-1"><b>${esc(pName(p))}</b> <span class="text-gray-500">${esc(teamName(p.team_id))}</span>
+          <span class="text-red-800 font-semibold">· ${esc(s.label)}</span>
+          ${s.reason ? `<span class="text-gray-500">· ${esc(s.reason)}</span>` : ''}</span>
+        <button data-lift="${s.id}" class="text-xs text-red-700 hover:underline">Lift</button>
+      </div>`; }).join('') : '';
+  }
+  $('sus-list').addEventListener('click', async e => {
+    const b = e.target.closest('[data-lift]'); if (!b) return;
+    if (!confirm('Lift this suspension? The player will no longer show as suspended.')) return;
+    const { error } = await sb.from('suspensions').update({ lifted_at: new Date().toISOString(), lifted_by: me.id }).eq('id', b.dataset.lift);
+    toast(error ? 'Could not lift it.' : 'Suspension lifted.', !error);
+    loadSusp();
+  });
+
+  /* ---- game sheet log ---- */
   async function loadSheet() {
     const { data } = await sb.from('game_events')
-      .select('id, type, period, clock, minutes, infraction, player:player_id(first_name,last_name,jersey_number), a1:assist1_id(last_name), a2:assist2_id(last_name)')
-      .eq('game_id', id).order('created_at', { ascending: false });
-    document.getElementById('sheet').innerHTML = (data || []).length ? data.map(e => `
+      .select('id, type, team_id, period, clock, minutes, infraction, player:player_id(first_name,last_name,jersey_number), a1:assist1_id(last_name), a2:assist2_id(last_name)')
+      .eq('game_id', id).order('period', { ascending: false }).order('created_at', { ascending: false });
+    $('sheet').innerHTML = (data || []).length ? data.map(e => `
       <div class="flex items-center gap-3 text-sm py-2 border-b" style="border-color:var(--line)">
         <span class="text-gray-400 w-20 tnum">${ordinal(e.period)} ${esc(e.clock ?? '')}</span>
         <span class="font-bold w-12" style="color:${e.type === 'penalty' ? 'var(--brass)' : 'var(--ivy)'}">${e.type === 'penalty' ? 'PEN' : 'GOAL'}</span>
-        <span class="flex-1">${e.player ? `#${e.player.jersey_number ?? ''} ${esc(e.player.first_name)} ${esc(e.player.last_name)}` : '—'}
+        <span class="flex-1">${e.player ? `#${e.player.jersey_number ?? ''} ${esc(e.player.first_name)} ${esc(e.player.last_name)}` : esc(teamName(e.team_id))}
           ${e.type === 'goal' && (e.a1 || e.a2) ? `<span class="text-gray-500">(${[e.a1?.last_name, e.a2?.last_name].filter(Boolean).map(esc).join(', ')})</span>` : ''}
-          ${e.type === 'penalty' ? `<span class="text-gray-500">${esc(e.infraction ?? '')} — ${e.minutes} min</span>` : ''}</span>
-        <button data-del="${e.id}" class="text-xs text-red-700 hover:underline">Remove</button>
+          ${e.type === 'penalty' ? `<span class="text-gray-500">${esc(e.infraction ?? '')}, ${e.minutes} min</span>` : ''}</span>
+        <button data-del="${e.id}" data-type="${e.type}" data-team="${e.team_id ?? ''}" class="text-xs text-red-700 hover:underline">Remove</button>
       </div>`).join('') : '<p class="text-sm text-gray-500">Nothing recorded yet.</p>';
-
-    document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-      if (!confirm('Remove this entry? Adjust the score manually if needed.')) return;
-      await sb.from('game_events').delete().eq('id', b.dataset.del);
-      loadSheet();
-    });
   }
+  $('sheet').addEventListener('click', async e => {
+    const b = e.target.closest('[data-del]'); if (!b) return;
+    const goal = b.dataset.type === 'goal';
+    if (!confirm(goal ? 'Remove this goal? The score goes down by one.' : 'Remove this entry?')) return;
+    const { error } = await sb.from('game_events').delete().eq('id', b.dataset.del);
+    if (error) return toast('Could not remove it.', false);
+    if (goal && b.dataset.team) {
+      const field = b.dataset.team === state.home_team_id ? 'home_score' : 'away_score';
+      await setScore(field, state[field] - 1);
+    }
+    loadSheet();
+  });
+
+  /* ---- keyboard: G / P / S jump to a form, Enter saves the form you're in ---- */
+  $('view').addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.target.tagName === 'BUTTON') return;
+    const form = e.target.closest('[data-form]');
+    if (!form) return;
+    e.preventDefault();
+    form.querySelector('[data-submit]').click();
+  });
+  sheetKeys = e => {
+    if (e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    const target = { g: '[data-form="goal"] [data-when="time"]', p: '[data-form="pen"] [data-when="time"]', s: '#sus-player' }[e.key.toLowerCase()];
+    const el = target && document.querySelector(target);
+    if (!el) return;
+    e.preventDefault();
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.focus();
+  };
+
+  fillPlayers();
+  loadSusp();
   loadSheet();
 }
 
@@ -355,7 +520,7 @@ async function regsView() {
     <div class="panel overflow-x-auto">
       <table class="grid-table">
         <thead><tr><th>Received</th><th>Player</th><th>Contact</th><th>Pos</th><th>#</th>
-          <th>Division</th><th>Team</th><th>Paid</th><th>Status</th><th>Emergency</th></tr></thead>
+          <th>Division</th><th>Team</th><th>Paid</th><th>Status</th><th>Emergency</th><th></th></tr></thead>
         <tbody>${(regs || []).map(r => `
           <tr data-id="${r.id}">
             <td class="text-gray-500 whitespace-nowrap">${fmtDT(r.created_at)}</td>
@@ -372,7 +537,8 @@ async function regsView() {
               ${['new', 'approved', 'waitlist', 'declined'].map(s => `<option ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}
             </select></td>
             <td class="text-xs text-gray-500">${esc(r.emergency_name ?? '')}<br>${esc(r.emergency_phone ?? '')}</td>
-          </tr>`).join('') || '<tr><td colspan="10" class="text-sm text-gray-500">No registrations yet.</td></tr>'}
+            <td><button data-delreg="${r.id}" class="text-xs text-red-700 hover:underline">Delete</button></td>
+          </tr>`).join('') || '<tr><td colspan="11" class="text-sm text-gray-500">No registrations yet.</td></tr>'}
         </tbody>
       </table>
     </div>`);
@@ -383,6 +549,26 @@ async function regsView() {
     const val = sel.dataset.field === 'team_id' ? (sel.value || null) : sel.value;
     const { error } = await sb.from('registrations').update({ [sel.dataset.field]: val }).eq('id', id);
     toast(error ? 'Could not update that registration.' : 'Updated.', !error);
+  });
+
+  /* Delete a registration. If it was approved onto a roster, offer to take the
+     player off too: they're set inactive (hidden from the public roster) rather
+     than deleted, so goals/penalties they already have stay on the record. */
+  document.getElementById('view').addEventListener('click', async e => {
+    const b = e.target.closest('[data-delreg]'); if (!b) return;
+    const r = (regs || []).find(x => x.id === b.dataset.delreg); if (!r) return;
+    const name = `${r.first_name} ${r.last_name}`;
+    if (!confirm(`Delete ${name}'s registration? This can't be undone.`)) return;
+    const offRoster = r.player_id &&
+      confirm(`${name} is on the ${r.team?.name ?? 'team'} roster.\n\nOK: take them off the roster too (their stats are kept).\nCancel: leave them on the roster.`);
+    const { data, error } = await sb.from('registrations').delete().eq('id', r.id).select('id');
+    if (error || !data?.length) return toast(error ? 'Could not delete that registration.' : 'Not allowed: only admins can delete registrations.', false);
+    if (offRoster) {
+      const { error: pe } = await sb.from('players').update({ status: 'inactive' }).eq('id', r.player_id);
+      if (pe) toast('Registration deleted, but the player is still on the roster. Remove them in Teams & rosters.', false);
+      else toast('Registration deleted and player taken off the roster.');
+    } else toast('Registration deleted.');
+    regsView();
   });
 
   document.getElementById('export').onclick = () => {
@@ -507,6 +693,11 @@ async function teamsView() {
   const { data: teams } = await sb.from('teams').select('*').order('division').order('name');
   const { data: players } = await sb.from('players').select('*').order('jersey_number');
   const { data: divisions } = await sb.from('divisions').select('*').order('sort').order('name');
+  const suspBy = IvySusp.byPlayer(await IvySusp.loadActive(sb));
+  const suspTag = p => { const s = suspBy.get(p.id); return s ? `
+    <span class="ml-2 inline-block text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-sm bg-red-700 text-white">Suspended · ${esc(s.label)}</span>
+    ${s.reason ? `<span class="text-xs font-normal text-gray-500 ml-1">${esc(s.reason)}</span>` : ''}
+    <button data-lift="${s.id}" class="text-xs font-normal text-red-700 hover:underline ml-1">Lift</button>` : ''; };
   const divOpts = sel => (divisions || []).map(d => `<option ${d.name === sel ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
 
   mount(`
@@ -553,7 +744,7 @@ async function teamsView() {
           <tbody>${(players || []).filter(p => p.team_id === t.id).map(p => `
             <tr data-player="${p.id}">
               <td><input class="field !py-1 !w-14 !text-xs" data-pf="jersey_number" value="${p.jersey_number ?? ''}"></td>
-              <td class="font-semibold">${esc(p.first_name)} ${esc(p.last_name)}</td>
+              <td class="font-semibold">${esc(p.first_name)} ${esc(p.last_name)}${suspTag(p)}</td>
               <td><select class="field !py-1 !text-xs" data-pf="position">
                 ${['Forward', 'Defence', 'Goalie'].map(x => `<option ${x === p.position ? 'selected' : ''}>${x}</option>`).join('')}</select></td>
               <td><select class="field !py-1 !text-xs" data-pf="status">
@@ -615,6 +806,13 @@ async function teamsView() {
   });
 
   document.getElementById('view').addEventListener('click', async e => {
+    const lift = e.target.closest('[data-lift]');
+    if (lift) {
+      if (!confirm('Lift this suspension? The player will no longer show as suspended.')) return;
+      const { error } = await sb.from('suspensions').update({ lifted_at: new Date().toISOString(), lifted_by: me.id }).eq('id', lift.dataset.lift);
+      toast(error ? 'Could not lift it.' : 'Suspension lifted.', !error);
+      return teamsView();
+    }
     const deldiv = e.target.closest('[data-deldiv]');
     if (deldiv) {
       if (!confirm('Delete this division? Teams already using it keep the name, but it will no longer appear as an option.')) return;

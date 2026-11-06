@@ -34,11 +34,12 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="assets/js/config.js"></script>
 <script src="assets/js/app.js"></script>
+<script src="assets/js/league.js"></script>
 <script src="assets/js/conrad.js"></script>
 <script>
 document.addEventListener('ivy:ready', async () => {
-  const { fmtTime, fmtClock, liveClockSeconds, ordinal, esc } = window.Ivy;
-  const SEL = 'id, starts_at, venue, division, status, home_score, away_score, period, clock_seconds, clock_running, clock_updated_at, home:home_team_id(id,name,colour), away:away_team_id(id,name,colour)';
+  const { fmtTime, ordinal, esc } = window.Ivy;
+  const SEL = 'id, starts_at, venue, division, status, home_score, away_score, period, home:home_team_id(id,name,colour), away:away_team_id(id,name,colour)';
   let games = [], events = {};
 
   async function load() {
@@ -80,7 +81,7 @@ document.addEventListener('ivy:ready', async () => {
           <p class="display text-xl md:text-2xl">${esc(g.away?.name ?? 'TBD')}</p>
           <div>
             <p class="scoreline text-5xl md:text-6xl">${g.away_score}<span class="text-[var(--ivy-sprig)] mx-2">–</span>${g.home_score}</p>
-            ${live ? `<p class="text-sm font-bold mt-2 tnum" data-clock="${g.id}" style="color:var(--brass)">${ordinal(g.period)} · ${fmtClock(liveClockSeconds(g))}</p>` : ''}
+            ${live ? `<p class="text-sm font-bold mt-2 tnum" data-clock="${g.id}" style="color:var(--brass)">${IvyGameTime.label(g, ordinal)}</p>` : ''}
           </div>
           <p class="display text-xl md:text-2xl">${esc(g.home?.name ?? 'TBD')}</p>
         </div>
@@ -104,11 +105,11 @@ document.addEventListener('ivy:ready', async () => {
     if (location.hash) document.querySelector(location.hash)?.scrollIntoView({ behavior: 'smooth' });
   }
 
-  /* Tick the clock locally between database writes. */
+  /* Game time is an estimate from the scheduled start; refresh it as time passes. */
   setInterval(() => {
     games.filter(g => g.status === 'live').forEach(g => {
       const el = document.querySelector(`[data-clock="${g.id}"]`);
-      if (el) el.textContent = `${ordinal(g.period)} · ${fmtClock(liveClockSeconds(g))}`;
+      if (el) el.textContent = IvyGameTime.label(g, ordinal);
     });
   }, 1000);
 
