@@ -436,7 +436,7 @@
     const lines = hits.map(r => {
       const team = d.byId[r.team_id];
       const num = r.jersey_number != null ? ` wearing #${r.jersey_number}` : '';
-      return `${team ? team.name : 'a team'}${r.status === 'spare' ? ' (as a spare)' : ''}${num}`;
+      return `${team ? team.name : 'a team'}${r.status === 'spare' ? ' (as a spare)' : r.status === 'ap' ? ' (as an AP)' : ''}${num}`;
     });
     const team = d.byId[hits[0].team_id];
     if (team && !recalled() && !someoneElse) remember(team);
