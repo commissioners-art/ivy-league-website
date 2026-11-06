@@ -3,6 +3,8 @@
    Stops the "old template flashes, then my edits appear" effect:
    - re-applies the colours saved from the last visit before paint
    - hides editable text/images until app.js fills them in
+   - on a first visit (nothing saved yet) hides the whole page instead,
+     so the default colours never flash
    A safety timer always reveals the page, so the built-in template
    text still shows if Supabase is unreachable.
 --------------------------------------------------------------- */
@@ -15,8 +17,14 @@
   if (cached) for (var k in VARS) if (cached[k]) root.style.setProperty(VARS[k], cached[k]);
 
   root.classList.add('cms-loading');
+  // No saved copy yet (first visit, or after the browser cleared it): the
+  // custom colours aren't known either, so hold the whole page back
+  // instead of flashing the default green.
+  if (!cached) root.classList.add('cms-first');
   var style = document.createElement('style');
-  style.textContent = 'html.cms-loading [data-cms], html.cms-loading [data-cms-src] { visibility: hidden; }';
+  style.textContent =
+    'html.cms-loading [data-cms], html.cms-loading [data-cms-src] { visibility: hidden; }' +
+    'html.cms-loading.cms-first body { visibility: hidden; }';
   document.head.appendChild(style);
 
   window.IVY_REVEAL = function () { root.classList.remove('cms-loading'); };
