@@ -62,13 +62,38 @@
     };
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) toggle(); });
 
-    bubble('assistant', GREETING);
-    chips();
+    const saved = loadChat();
+    if (saved.history.length) {
+      history = saved.history;
+      history.forEach(m => bubble(m.role, m.content));
+      if (saved.open) toggle();
+    } else {
+      const t = rememberedTeamName();
+      const hello = t
+        ? `Welcome back. Last time you were following ${t}. Ask me "when do we play next?" or anything else about the league.`
+        : GREETING;
+      bubble('assistant', hello);
+      history.push({ role: 'assistant', content: hello });
+      chips(t);
+    }
   }
 
-  function chips() {
+  /* The conversation survives moving between pages (same browser tab). */
+  const CHAT_KEY = 'ivy.conrad.chat';
+  function loadChat() {
+    try { return JSON.parse(sessionStorage.getItem(CHAT_KEY)) || { history: [] }; } catch (e) { return { history: [] }; }
+  }
+  function saveChat() {
+    try { sessionStorage.setItem(CHAT_KEY, JSON.stringify({ history: history.slice(-40), open, convo })); } catch (e) {}
+  }
+  function rememberedTeamName() {
+    try { return localStorage.getItem('ivy.conrad.teamName'); } catch (e) { return null; }
+  }
+
+  function chips(team) {
     const wrap = document.getElementById('conrad-chips');
-    wrap.innerHTML = SUGGESTIONS.map(s =>
+    const list = team ? [`When do the ${team} play next?`, ...SUGGESTIONS.slice(1)] : SUGGESTIONS;
+    wrap.innerHTML = list.map(s =>
       `<button class="text-xs px-3 py-1.5 rounded-full btn-quiet" data-q="${s}">${s}</button>`).join('');
     wrap.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { wrap.innerHTML = ''; send(b.dataset.q); });
   }
@@ -78,6 +103,7 @@
     document.getElementById('conrad-panel').classList.toggle('hidden', !open);
     document.getElementById('conrad-open').classList.toggle('hidden', open);
     if (open) setTimeout(() => document.getElementById('conrad-input').focus(), 50);
+    saveChat();
   }
 
   function bubble(role, text) {
@@ -111,7 +137,15 @@
   let pending = null;            // intent waiting on "which team?"
 
   let myTeam = null;
-  const remember = (id) => { myTeam = id; try { localStorage.setItem(TEAM_KEY, id); } catch (e) {} };
+  const remember = (team) => {
+    myTeam = team.id;
+    try { localStorage.setItem(TEAM_KEY, team.id); localStorage.setItem('ivy.conrad.teamName', team.name); } catch (e) {}
+  };
+  const forget = () => { myTeam = null; try { localStorage.removeItem(TEAM_KEY); localStorage.removeItem('ivy.conrad.teamName'); } catch (e) {} };
+
+  /* What this conversation is about, so follow-ups like "and the Ale
+     division?", "what about after that?" or "how did they do?" work. */
+  let convo = loadChat().convo || { topic: null, teamId: null, shown: 0 };
   const recalled = () => { try { return localStorage.getItem(TEAM_KEY) || myTeam; } catch (e) { return myTeam; } };
 
   async function data() {
@@ -241,6 +275,7 @@
     const out = divs.map(dv => {
       const rows = d.table.filter(r => r.division === dv)
         .sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga)).slice(0, 3);
+      if (!rows.length) return `${dv} division: no results yet.`;
       return `${dv} division:\n${list(rows.map((r, i) => `${i + 1}. ${r.name}, ${r.pts} pts (${r.w}-${r.l}-${r.t})`))}`;
     });
     return `${out.join('\n\n')}\n\nFull table on the [Standings page](standings.html).`;
@@ -300,36 +335,75 @@
     { re: /\b(standing|first place|1st place|table|rank|record|leading|on top|best team)/i, fn: standings },
     { re: /\b(live|right now|on the ice|currently)\b/i, fn: liveNow },
     { re: /\b(where|venue|rink|arena|address|location|park)/i, fn: where },
-    { re: /\b(last|result|final|won|win|lost|lose|beat|did .* do|score)/i, fn: lastResult, team: true },
-    { re: /\b(next|when|play|schedule|game|tonight|today|tomorrow|this week)/i, fn: nextGame, team: true, askTeam: /\b(my|our|we|i)\b/i },
+    { re: /\b(last|result|final|won|win|lost|lose|beat|did .* do|score)/i, fn: lastResult, team: true, askTeam: /\b(my|our|we|us|i)\b/i },
+    { re: /\b(next|when|play|schedule|game|tonight|today|tomorrow|this week)/i, fn: nextGame, team: true, askTeam: /\b(my|our|we|us|i)\b/i },
     { re: /\b(division|league|level|skill|beginner|competitive)/i, fn: divisions },
     { re: /\b(teams?|roster|line ?up)\b/i, fn: teamsAnswer, team: true },
     { re: /\b(contact|email|refund|commissioner|question|help me|talk to)/i, fn: contact },
     { re: /\b(news|announce|update)/i, fn: news }
   ];
 
+  const FOLLOW_UP = /^(and|what about|how about|same for|ok(ay)? and|now)\b|\b(them|they|their|that team)\b/i;
+  const MORE = /\b(after that|the one after|and then|following|more games|any more|rest of)\b/i;
+  const TOPICS = { nextGame, lastResult, standings, scorers, teamsAnswer, liveNow };
+
+  function moreGames(text, d, team) {
+    const up = d.games.filter(isUpcoming).filter(g => !team || involves(g, team));
+    const rows = up.slice(convo.shown, convo.shown + 4);
+    if (!rows.length) return `That's everything I have${team ? ` for ${team.name}` : ''} so far. New dates go up on the [Schedule page](schedule.html).`;
+    convo.shown += rows.length;
+    return `After that${team ? ` for ${team.name}` : ''}:\n${list(rows.map(g => `${when(g.starts_at)}: ${matchup(g)}${venue(g)}`))}`;
+  }
+
   async function answer(text) {
     const d = await data();
     const named = findTeam(text, d);
-    if (named) remember(named.id);
+    const convoTeam = d.byId[convo.teamId] || null;
+    const mine = d.byId[recalled()] || null;
+
+    // "I play for the Lagers" / "my team is ..."
+    if (named && /\b(i('?m| am)? (on|with|play (for|on))|my team('?s| is)|we('?re| are))\b/i.test(text)) {
+      remember(named);
+      convo = { topic: 'nextGame', teamId: named.id, shown: 3 };
+      return `Noted: you're with ${named.name}. I'll remember that next time too. ${nextGame(text, d, named)}`;
+    }
+    if (/\bforget (my team|me|that)\b/i.test(text)) {
+      forget();
+      return "Done. I've forgotten your team.";
+    }
 
     // Reply to "which team are you on?"
     if (pending && named) {
       const fn = pending; pending = null;
+      remember(named);
+      convo = { topic: fn.name, teamId: named.id, shown: 3 };
       return fn(text, d, named);
     }
     pending = null;
 
+    // "what about after that?"
+    if (MORE.test(text) && convo.topic === 'nextGame') return moreGames(text, d, named || convoTeam);
+
+    // "and the Ale division?" / "how did they do?" / "what about the Lagers?"
     const rule = RULES.find(r => r.re.test(text));
+    if (convo.topic && TOPICS[convo.topic] && FOLLOW_UP.test(text) && (!rule || rule.team || named || findDivision(text, d))) {
+      const fn = rule && rule.team ? rule.fn : TOPICS[convo.topic];
+      const team = named || convoTeam;
+      convo = { topic: fn.name, teamId: team?.id || null, shown: 3 };
+      return fn(text, d, team);
+    }
+
     if (!rule) {
-      if (named) return teamsAnswer(text, d, named);
+      if (named) { convo = { topic: 'teamsAnswer', teamId: named.id, shown: 3 }; return teamsAnswer(text, d, named); }
       return `I'm not sure I follow. ${HELP}`;
     }
     let team = null;
     if (rule.team) {
-      team = named || (rule.askTeam?.test(text) ? d.byId[recalled()] : null);
-      if (!team && rule.askTeam?.test(text)) return askTeam(rule.fn, d);
+      const personal = rule.askTeam?.test(text);
+      team = named || (personal ? mine : null) || (FOLLOW_UP.test(text) ? convoTeam : null);
+      if (!team && personal) return askTeam(rule.fn, d);
     }
+    if (rule.fn.name in TOPICS) convo = { topic: rule.fn.name, teamId: team?.id || null, shown: team ? 3 : 4 };
     return rule.fn(text, d, team);
   }
 
@@ -352,6 +426,7 @@
       dots.remove();
       bubble('assistant', reply);
       history.push({ role: 'assistant', content: reply });
+      saveChat();
     } catch (err) {
       dots.remove();
       bubble('assistant',
