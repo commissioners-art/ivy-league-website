@@ -141,6 +141,8 @@
   const TEAM_KEY = 'ivy.conrad.team';
   let cache = null, cacheAt = 0;
   let pending = null;            // intent waiting on "which team?"
+  let pendingName = false;       // waiting on "what name did you register under?"
+  let pendingNameAsked = false;  // ...because they asked to check the roster
 
   let myTeam = null;
   const remember = (team) => {
@@ -355,7 +357,7 @@
       ]) + ' ' + nudge;
     if (/\b(bye|goodbye|see (ya|you)|later|good ?night|gn|cya|peace)\b/.test(t))
       return pick(['Good night. Keep your stick on the ice.', 'Until next time. Mind the boards.', 'Cheers. See you at the rink.']);
-    if (/\b(love (you|it|this)|you('?re| are) (the best|great|awesome|cool|smart)|nice|cool|awesome|sick|dope|great job|good bot)\b/.test(t))
+    if (/\b(love (you|it|this)|you('?re| are) (the best|great|awesome|cool|smart)|(this|that|it)('?s| is) (great|cool|awesome|sick|amazing|fire)|nice|cool|awesome|sick|dope|great job|good bot)\b/.test(t))
       return pick(['Much obliged.', 'Kind of you to say.', 'I try to keep it tidy.']) + ' ' + nudge;
     if (/\b(stupid|dumb|useless|suck|sucks|hate you|trash|idiot)\b/.test(t))
       return "Fair enough. I only know league business, so I can miss the mark. Try asking about a team, the schedule, standings or registration, and I'll do better.";
@@ -381,6 +383,66 @@
     "Hmm, that's not something I keep in the league records.",
     "You've lost me there."
   ];
+
+  /* ---------- "am I registered?" ----------
+     Rosters are public on the Teams page, so Conrad can say whether a
+     name is on one. Registrations and payments are private (staff-only
+     in Supabase), so he never reads or reveals those. */
+  const NAME_KEY = 'ivy.conrad.name';
+  const savedName = () => { try { return localStorage.getItem(NAME_KEY); } catch (e) { return null; } };
+  const saveName = (n) => { try { localStorage.setItem(NAME_KEY, n); } catch (e) {} };
+  const forgetName = () => { try { localStorage.removeItem(NAME_KEY); } catch (e) {} };
+  const titleCase = (n) => n.replace(/\b([a-z])/g, c => c.toUpperCase());
+  const NOT_NAMES = new Set(('on with not a an the just looking trying new here good fine ok okay registered signed playing in from ' +
+    'going so very interested am and is i on there wondering asking checking sure back done ready still also a team player goalie ' +
+    'forward defence defense spare your his her their this that what who it me great awesome cool nice sick amazing bad ' +
+    'terrible fun crazy weird dumb stupid wrong right correct confused lost tired hungry bored excited happy sad glad').split(' '));
+
+  function cleanName(raw) {
+    const words = String(raw || '').toLowerCase().replace(/[^a-z' -]/g, ' ').trim().split(/\s+/).filter(Boolean);
+    const out = [];
+    for (const w of words) { if (NOT_NAMES.has(w) || out.length === 3) break; out.push(w); }
+    return out.length ? titleCase(out.join(' ')) : null;
+  }
+  function extractName(text) {
+    const m = text.match(/\b(?:my name is|my name's|name's|names|i am|i'm|im|this is|call me)\s+([a-z][a-z' -]*)/i);
+    if (m) return cleanName(m[1]);
+    return null;
+  }
+  // "is Jane Smith on a roster?" asks about someone, so it isn't saved as the visitor's name.
+  function askedAbout(text) {
+    const q = text.match(/\bis ([a-z]+ [a-z]+) (?:on|in) (?:a|the|any)? ?(?:roster|team|list)/i);
+    return q ? cleanName(q[1]) : null;
+  }
+  const ROSTER_RE = /\b(am i|are we|is my|did i|did my|have i|is [a-z]+ [a-z]+)\b[^.]*\b(regist\w*|signed up|on (the |a |any )?(roster|team|list)|on there|in yet|confirmed|go(ne)? through|paid up)\b|\bmy (registration|sign ?up|spot)\b|\bam i (on|in|registered|signed)\b/i;
+
+  async function rosterCheck(name, d, someoneElse) {
+    const parts = name.split(' ');
+    if (parts.length < 2) {
+      pendingName = true; pendingNameAsked = true;
+      return `Thanks, ${name}. What's your last name too? Rosters list players by full name.`;
+    }
+    const first = parts[0], last = parts.slice(1).join(' ');
+    const { data: rows, error } = await window.sb.from('players')
+      .select('first_name, last_name, jersey_number, status, team_id')
+      .ilike('first_name', first).ilike('last_name', last);
+    if (error) throw error;
+    const hits = (rows || []).filter(r => r.status !== 'inactive');
+    const email = window.IVY_CONTENT?.['footer.email'] || CFG.CONTACT_EMAIL;
+    if (!hits.length) {
+      return `I don't see a ${name} on any roster yet. You go on a roster once the league confirms your registration and payment. If you signed up recently it may still be in progress. ` +
+        `To check where it stands, email [${email}](mailto:${email}). New registrations open on the [Registration page](register.html).`;
+    }
+    const lines = hits.map(r => {
+      const team = d.byId[r.team_id];
+      const num = r.jersey_number != null ? ` wearing #${r.jersey_number}` : '';
+      return `${team ? team.name : 'a team'}${r.status === 'spare' ? ' (as a spare)' : ''}${num}`;
+    });
+    const team = d.byId[hits[0].team_id];
+    if (team && !recalled() && !someoneElse) remember(team);
+    return `Yes, ${name} is on the roster: ${lines.join(', and ')}. ` +
+      (team && !someoneElse ? `Want to know when ${team.name} play next? Just ask "when do we play?"` : 'Rosters are on the [Teams page](teams.html).');
+  }
 
   const HELP = "I can tell you when your team plays next, recent scores, standings, scoring leaders, how to register and what it costs, or where we play. Try \"when do the Lagers play next?\"";
 
@@ -445,8 +507,35 @@
     }
     if (/\bforget (my team|me|that)\b/i.test(text)) {
       forget();
-      return "Done. I've forgotten your team.";
+      if (/\bforget (me|that)\b/i.test(text)) forgetName();
+      return /\bforget (me|that)\b/i.test(text) ? "Done. I've forgotten your name and team." : "Done. I've forgotten your team.";
     }
+
+    // Names and "am I registered / on a roster?"
+    const wantsRoster = ROSTER_RE.test(text);
+    let given = extractName(text);
+    if (!given && pendingName && !wantsRoster && !named) {
+      // Reply to "what name did you register under?": the message is the name.
+      // A one-word reply after we already have a first name is the last name.
+      const one = cleanName(text);
+      const prior = savedName();
+      given = one && !one.includes(' ') && prior && !prior.includes(' ') ? `${prior} ${one}` : one;
+    }
+    if (given) {
+      pendingName = false;
+      saveName(given);
+      if (wantsRoster || pendingNameAsked) { pendingNameAsked = false; return rosterCheck(given, d); }
+      return `Nice to meet you, ${given.split(' ')[0]}. I'll remember that. Want me to check whether you're on a roster yet? Just ask "am I registered?"`;
+    }
+    const other = askedAbout(text);
+    if (other && other.includes(' ')) { pendingName = false; return rosterCheck(other, d, true); }
+    if (wantsRoster) {
+      const n = savedName();
+      if (n) return rosterCheck(n, d);
+      pendingName = true; pendingNameAsked = true;
+      return "What name did you register under? I'll check the rosters. (Payment details are private, so for those the commissioners are the people to ask.)";
+    }
+    pendingName = false;
 
     // Reply to "which team are you on?"
     if (pending && named) {
