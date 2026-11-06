@@ -16,6 +16,17 @@
   var VARS = { 'theme.ivy': '--ivy', 'theme.ivy_deep': '--ivy-deep', 'theme.brass': '--brass', 'theme.sprig': '--ivy-sprig' };
   if (cached) for (var k in VARS) if (cached[k]) root.style.setProperty(VARS[k], cached[k]);
 
+  // HUD theme (assets/css/hud-theme.css). ?theme=hud previews it in this
+  // browser only, ?theme=classic turns the preview off; site_content
+  // "theme.style" = "hud" switches it on for everyone.
+  var pick = null;
+  try {
+    pick = new URLSearchParams(location.search).get('theme');
+    if (pick === 'hud' || pick === 'classic') localStorage.setItem('ivy.theme', pick);
+    else pick = localStorage.getItem('ivy.theme');
+  } catch (e) {}
+  if (pick === 'hud' || (pick !== 'classic' && cached && cached['theme.style'] === 'hud')) root.classList.add('hud');
+
   root.classList.add('cms-loading');
   // No saved copy yet (first visit, or after the browser cleared it): the
   // custom colours aren't known either, so hold the whole page back
