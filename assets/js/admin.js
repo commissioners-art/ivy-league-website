@@ -520,7 +520,7 @@ async function regsView() {
     <div class="panel overflow-x-auto">
       <table class="grid-table">
         <thead><tr><th>Received</th><th>Player</th><th>Contact</th><th>Pos</th><th>#</th>
-          <th>Division</th><th>Team</th><th>Paid</th><th>Status</th><th>Emergency</th></tr></thead>
+          <th>Division</th><th>Team</th><th>Paid</th><th>Status</th><th>Emergency</th><th></th></tr></thead>
         <tbody>${(regs || []).map(r => `
           <tr data-id="${r.id}">
             <td class="text-gray-500 whitespace-nowrap">${fmtDT(r.created_at)}</td>
@@ -537,7 +537,8 @@ async function regsView() {
               ${['new', 'approved', 'waitlist', 'declined'].map(s => `<option ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}
             </select></td>
             <td class="text-xs text-gray-500">${esc(r.emergency_name ?? '')}<br>${esc(r.emergency_phone ?? '')}</td>
-          </tr>`).join('') || '<tr><td colspan="10" class="text-sm text-gray-500">No registrations yet.</td></tr>'}
+            <td><button data-delreg="${r.id}" class="text-xs text-red-700 hover:underline">Delete</button></td>
+          </tr>`).join('') || '<tr><td colspan="11" class="text-sm text-gray-500">No registrations yet.</td></tr>'}
         </tbody>
       </table>
     </div>`);
@@ -548,6 +549,26 @@ async function regsView() {
     const val = sel.dataset.field === 'team_id' ? (sel.value || null) : sel.value;
     const { error } = await sb.from('registrations').update({ [sel.dataset.field]: val }).eq('id', id);
     toast(error ? 'Could not update that registration.' : 'Updated.', !error);
+  });
+
+  /* Delete a registration. If it was approved onto a roster, offer to take the
+     player off too: they're set inactive (hidden from the public roster) rather
+     than deleted, so goals/penalties they already have stay on the record. */
+  document.getElementById('view').addEventListener('click', async e => {
+    const b = e.target.closest('[data-delreg]'); if (!b) return;
+    const r = (regs || []).find(x => x.id === b.dataset.delreg); if (!r) return;
+    const name = `${r.first_name} ${r.last_name}`;
+    if (!confirm(`Delete ${name}'s registration? This can't be undone.`)) return;
+    const offRoster = r.player_id &&
+      confirm(`${name} is on the ${r.team?.name ?? 'team'} roster.\n\nOK: take them off the roster too (their stats are kept).\nCancel: leave them on the roster.`);
+    const { data, error } = await sb.from('registrations').delete().eq('id', r.id).select('id');
+    if (error || !data?.length) return toast(error ? 'Could not delete that registration.' : 'Not allowed: only admins can delete registrations.', false);
+    if (offRoster) {
+      const { error: pe } = await sb.from('players').update({ status: 'inactive' }).eq('id', r.player_id);
+      if (pe) toast('Registration deleted, but the player is still on the roster. Remove them in Teams & rosters.', false);
+      else toast('Registration deleted and player taken off the roster.');
+    } else toast('Registration deleted.');
+    regsView();
   });
 
   document.getElementById('export').onclick = () => {
