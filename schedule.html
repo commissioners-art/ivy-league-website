@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="assets/css/ivy.css?v=2026110702">
-<script src="assets/js/preload.js?v=2026110702"></script>
+<link rel="stylesheet" href="assets/css/ivy.css?v=2026110703">
+<script src="assets/js/preload.js?v=2026110703"></script>
 </head>
 <body>
 <header id="site-header"></header>
@@ -41,13 +41,14 @@
 <footer id="site-footer"></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js?v=2026110702"></script>
-<script src="assets/js/app.js?v=2026110702"></script>
-<script src="assets/js/conrad.js?v=2026110702"></script>
+<script src="assets/js/config.js?v=2026110703"></script>
+<script src="assets/js/app.js?v=2026110703"></script>
+<script src="assets/js/league.js?v=2026110703"></script>
+<script src="assets/js/conrad.js?v=2026110703"></script>
 <script>
 document.addEventListener('ivy:ready', async () => {
   const { fmtDate, fmtTime, esc, ordinal } = window.Ivy;
-  const SEL = 'id, starts_at, venue, division, status, home_score, away_score, period, home:home_team_id(id,name), away:away_team_id(id,name)';
+  const SEL = '*, home:home_team_id(id,name), away:away_team_id(id,name)';
   let all = [];
 
   const { data: teams } = await sb.from('teams').select('id,name,division').order('division').order('name');
@@ -93,7 +94,7 @@ document.addEventListener('ivy:ready', async () => {
         : `<span class="text-lg font-semibold">${fmtTime(g.starts_at)}</span>`;
       const badge = live
         ? `<span class="pulse-live text-xs font-bold text-red-600">${ordinal(g.period)}</span>`
-        : final ? '<span class="text-xs text-gray-500">Final</span>'
+        : final ? `<span class="text-xs text-gray-500">${IvyGameTime.finalLabel(g)}</span>`
         : g.status === 'postponed' ? '<span class="text-xs font-semibold" style="color:var(--brass)">Postponed</span>' : '';
 
       return `${header}

@@ -18,5 +18,7 @@ window.IVY_CONFIG = {
   // Live game time is estimated from the scheduled start (no clock to run).
   // A game is GAME_MINUTES long, split evenly into PERIODS periods.
   GAME_MINUTES: 60,
-  PERIODS: 3
+  PERIODS: 3,
+  // NHL-style overtime: OT_MINUTES of sudden death if tied, then a shootout.
+  OT_MINUTES: 5
 };
