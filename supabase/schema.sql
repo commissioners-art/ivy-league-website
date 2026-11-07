@@ -270,6 +270,8 @@ create policy "admin delete regs" on registrations for delete using (is_admin())
 
 -- ---------- suspensions -------------------------------------------
 -- Defined in supabase/suspensions.sql (run that file after this one).
+-- Overtime/shootout columns and the NHL-style standings are in
+-- supabase/overtime.sql (run that after this one too).
 
 -- ---------- realtime ---------------------------------------------
 alter publication supabase_realtime add table games;

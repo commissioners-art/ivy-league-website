@@ -183,6 +183,7 @@ async function gameSheet(id) {
         <div>
           <p id="est-period" class="scoreline text-2xl" style="color:var(--brass-soft)"></p>
           <p id="est-time" class="text-xs text-white/60 mt-1"></p>
+          <p id="so-tally" class="text-xs font-bold mt-2 hidden" style="color:var(--brass-soft)"></p>
         </div>
         <div>
           <p class="display text-xl">${esc(g.home?.name ?? 'Home')}</p>
@@ -290,10 +291,10 @@ async function gameSheet(id) {
   /* ---- estimated period/time: header + prefill ---- */
   const when = form => document.querySelector(`[data-form="${form}"]`);
   const showEstimate = () => {
-    const e = IvyGameTime.estimate(state.starts_at, state.period);
-    $('est-period').textContent = `${ordinal(e.period)} period`;
+    const e = IvyGameTime.estimate(state.starts_at, state.period, Date.now(), IvyGameTime.isTied(state));
+    $('est-period').textContent = e.period === IvyGameTime.SO ? 'Shootout' : e.period === IvyGameTime.OT ? 'Overtime' : `${ordinal(e.period)} period`;
     $('est-time').textContent = e.phase === 'pre' ? 'Not started yet (by the schedule)'
-      : e.phase === 'over' ? 'Scheduled time is up'
+      : e.phase === 'over' ? (e.period === IvyGameTime.OT ? 'OT goal scored: finalize the game' : 'Scheduled time is up')
       : e.left == null ? '' : `about ${e.clock} left, by the schedule`;
     return e;
   };
@@ -307,7 +308,7 @@ async function gameSheet(id) {
   tick = setInterval(showEstimate, 15000);
   ['goal', 'pen'].forEach(f => when(f).querySelector('[data-when="time"]').addEventListener('focus', ev => {
     // Fill the estimate on focus so it's one keystroke to accept or overwrite.
-    const e = IvyGameTime.estimate(state.starts_at, state.period);
+    const e = IvyGameTime.estimate(state.starts_at, state.period, Date.now(), IvyGameTime.isTied(state));
     if (!ev.target.value && e.phase === 'play' && e.clock) { ev.target.value = e.clock; ev.target.select(); }
   }));
 
@@ -355,9 +356,40 @@ async function gameSheet(id) {
   $('go-live').onclick = async () => {
     if (await save({ status: 'live' })) { toast('Game is live on the site.'); gameSheet(id); }
   };
+  /* Finalize. NHL rules: an OT goal wins it; if still tied, the shootout
+     winner gets one goal added to the final score (shootout goals never
+     count on the scoreboard or in player stats). */
   $('go-final').onclick = async () => {
-    if (!confirm('Finalize this game? Standings will update.')) return;
-    if (await save({ status: 'final' })) { toast('Game finalized.'); clearInterval(tick); scoreView(); }
+    const { data: evs } = await sb.from('game_events').select('type, team_id, period').eq('game_id', id);
+    const goals = (evs || []).filter(e => e.type === 'goal');
+    const so = goals.filter(e => e.period === IvyGameTime.SO);
+    const ot = goals.some(e => e.period === IvyGameTime.OT);
+    const tied = state.home_score === state.away_score;
+    const patch = { status: 'final', decided_in: ot ? 'OT' : 'REG' };
+    let ask = 'Finalize this game? Standings will update.';
+
+    if (tied && so.length) {
+      const h = so.filter(e => e.team_id === state.home_team_id).length, a = so.length - h;
+      if (h === a) return toast(`The shootout is tied ${a}–${h}. Keep going until one team wins it.`, false);
+      const homeWins = h > a;
+      patch.decided_in = 'SO';
+      patch[homeWins ? 'home_score' : 'away_score'] = state[homeWins ? 'home_score' : 'away_score'] + 1;
+      ask = `${teamName(homeWins ? state.home_team_id : state.away_team_id)} win the shootout ${Math.max(a, h)}–${Math.min(a, h)}. ` +
+        `Final score: ${teamName(state.away_team_id)} ${patch.away_score ?? state.away_score}, ${teamName(state.home_team_id)} ${patch.home_score ?? state.home_score}. Finalize?`;
+    } else if (tied) {
+      ask = 'The score is tied. Under NHL rules it goes to 5 minutes of OT, then a shootout. Finalize it as a tie anyway?';
+    } else if (so.length) {
+      ask = "Shootout goals are on the sheet, but the score isn't tied, so they'll be ignored. Finalize?";
+    }
+    if (!confirm(ask)) return;
+
+    let { error } = await sb.from('games').update(patch).eq('id', id);
+    if (error && /decided_in/.test(error.message || '')) {   // overtime.sql not run yet
+      delete patch.decided_in;
+      ({ error } = await sb.from('games').update(patch).eq('id', id));
+    }
+    if (error) return toast('Could not save. Check your connection.', false);
+    toast('Game finalized.'); clearInterval(tick); scoreView();
   };
 
   /* ---- goal ---- */
@@ -366,17 +398,21 @@ async function gameSheet(id) {
     const v = $('goal-scorer').value;
     if (!v) { $('goal-scorer').focus(); return toast('Pick the scorer.', false); }
     const { team, player } = pick(v);
+    const shootout = w.period === IvyGameTime.SO;
     const { error } = await sb.from('game_events').insert({
       game_id: id, team_id: team, type: 'goal', player_id: player,
-      assist1_id: $('goal-a1').value || null, assist2_id: $('goal-a2').value || null,
+      assist1_id: shootout ? null : ($('goal-a1').value || null), assist2_id: shootout ? null : ($('goal-a2').value || null),
       period: w.period, clock: w.clock, created_by: me.id
     });
     if (error) return toast('Goal did not save.', false);
-    const field = team === state.home_team_id ? 'home_score' : 'away_score';
-    await setScore(field, state[field] + 1);
+    // Shootout goals don't go on the scoreboard; the winner gets one goal when the game is finalized.
+    if (!shootout) {
+      const field = team === state.home_team_id ? 'home_score' : 'away_score';
+      await setScore(field, state[field] + 1);
+    }
     await advance(w.period);
     $('goal-scorer').value = ''; fillAssists(); clearWhen('goal');
-    toast('Goal recorded.');
+    toast(shootout ? 'Shootout goal recorded.' : w.period === IvyGameTime.OT ? 'OT goal recorded. Finalize the game when ready.' : 'Goal recorded.');
     loadSheet();
   };
 
@@ -452,14 +488,18 @@ async function gameSheet(id) {
     const { data } = await sb.from('game_events')
       .select('id, type, team_id, period, clock, minutes, infraction, player:player_id(first_name,last_name,jersey_number), a1:assist1_id(last_name), a2:assist2_id(last_name)')
       .eq('game_id', id).order('period', { ascending: false }).order('created_at', { ascending: false });
+    const so = (data || []).filter(e => e.type === 'goal' && e.period === IvyGameTime.SO);
+    const soH = so.filter(e => e.team_id === state.home_team_id).length;
+    $('so-tally').textContent = so.length ? `Shootout: ${teamName(state.away_team_id)} ${so.length - soH}, ${teamName(state.home_team_id)} ${soH}` : '';
+    $('so-tally').classList.toggle('hidden', !so.length);
     $('sheet').innerHTML = (data || []).length ? data.map(e => `
       <div class="flex items-center gap-3 text-sm py-2 border-b" style="border-color:var(--line)">
         <span class="text-gray-400 w-20 tnum">${ordinal(e.period)} ${esc(e.clock ?? '')}</span>
-        <span class="font-bold w-12" style="color:${e.type === 'penalty' ? 'var(--brass)' : 'var(--ivy)'}">${e.type === 'penalty' ? 'PEN' : 'GOAL'}</span>
+        <span class="font-bold w-12" style="color:${e.type === 'penalty' ? 'var(--brass)' : 'var(--ivy)'}">${e.type === 'penalty' ? 'PEN' : e.period === IvyGameTime.SO ? 'SO' : 'GOAL'}</span>
         <span class="flex-1">${e.player ? `#${e.player.jersey_number ?? ''} ${esc(e.player.first_name)} ${esc(e.player.last_name)}` : esc(teamName(e.team_id))}
           ${e.type === 'goal' && (e.a1 || e.a2) ? `<span class="text-gray-500">(${[e.a1?.last_name, e.a2?.last_name].filter(Boolean).map(esc).join(', ')})</span>` : ''}
           ${e.type === 'penalty' ? `<span class="text-gray-500">${esc(e.infraction ?? '')}, ${e.minutes} min</span>` : ''}</span>
-        <button data-del="${e.id}" data-type="${e.type}" data-team="${e.team_id ?? ''}" class="text-xs text-red-700 hover:underline">Remove</button>
+        <button data-del="${e.id}" data-type="${e.type === 'goal' && e.period === IvyGameTime.SO ? 'so' : e.type}" data-team="${e.team_id ?? ''}" class="text-xs text-red-700 hover:underline">Remove</button>
       </div>`).join('') : '<p class="text-sm text-gray-500">Nothing recorded yet.</p>';
   }
   $('sheet').addEventListener('click', async e => {
@@ -629,6 +669,9 @@ async function schedView() {
             <td><input class="field !py-1 !text-xs" data-f="venue" value="${esc(g.venue ?? '')}"></td>
             <td><select class="field !py-1 !text-xs" data-f="status">
               ${['scheduled', 'live', 'final', 'postponed'].map(s => `<option ${s === g.status ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+            <select class="field !py-1 !text-xs mt-1" data-f="decided_in" title="How the game was decided">
+              ${[['REG', 'Regulation'], ['OT', 'Overtime'], ['SO', 'Shootout']].map(([v, l]) => `<option value="${v}" ${v === (g.decided_in || 'REG') ? 'selected' : ''}>${l}</option>`).join('')}
             </select></td>
             <td class="whitespace-nowrap">
               <button data-sheet="${g.id}" class="text-xs font-semibold hover:underline" style="color:var(--ivy)">Game sheet</button>

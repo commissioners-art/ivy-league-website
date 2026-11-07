@@ -5,6 +5,7 @@
       out from its scheduled start. Nobody runs a clock: a game is
       GAME_MINUTES long (default 60) split into PERIODS equal periods
       (default 3), so 7:20 into a 7:00 game is "1st, ~00:40 left".
+      Tied after regulation: OT_MINUTES (default 5) of OT, then a shootout.
 
    2. IvySusp: which suspensions are still active.
 
@@ -68,29 +69,53 @@
     return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   };
 
-  /* { phase: 'pre' | 'play' | 'over', period, left (seconds), clock ('MM:SS') }
+  const REG_SECS = PERIODS * PERIOD_SECS;
+  const OT_SECS = (CFG.OT_MINUTES ?? 5) * 60;
+  const OT = PERIODS + 1, SO = PERIODS + 2;
+
+  /* { phase: 'pre' | 'play' | 'over', period, left (seconds, or null if unknown), clock ('MM:SS') }
      recordedPeriod: the highest period the scorekeeper has entered (games.period).
-     If they've gone past regulation (OT/SO), that wins over the estimate. */
-  function estimate(startsAt, recordedPeriod = 1, now = Date.now()) {
+     tied: whether the score is level (true/false), or null if unknown.
+     NHL rules: tied after regulation -> OT_MINUTES of sudden death -> shootout. */
+  function estimate(startsAt, recordedPeriod = 1, now = Date.now(), tied = null) {
     const elapsed = (now - new Date(startsAt).getTime()) / 1000;
-    if (recordedPeriod > PERIODS) return { phase: 'play', period: recordedPeriod, left: null, clock: '' };
+    recordedPeriod = recordedPeriod || 1;
+    if (recordedPeriod >= SO) return { phase: 'play', period: SO, left: null, clock: '' };
     if (elapsed < 0) return { phase: 'pre', period: 1, left: PERIOD_SECS, clock: mmss(PERIOD_SECS) };
-    if (elapsed >= PERIODS * PERIOD_SECS) return { phase: 'over', period: PERIODS, left: 0, clock: '00:00' };
-    const period = Math.floor(elapsed / PERIOD_SECS) + 1;
-    const left = PERIOD_SECS - (elapsed % PERIOD_SECS);
-    // Scorekeeper is already ahead of the estimate (late start): trust them, drop the time.
-    if ((recordedPeriod || 1) > period) return { phase: 'play', period: recordedPeriod, left: null, clock: '' };
-    return { phase: 'play', period, left, clock: mmss(left) };
+
+    if (elapsed < REG_SECS) {
+      const period = Math.floor(elapsed / PERIOD_SECS) + 1;
+      const left = PERIOD_SECS - (elapsed % PERIOD_SECS);
+      // Scorekeeper is already ahead of the estimate (late start): trust them, drop the time.
+      if (recordedPeriod > period) return { phase: 'play', period: recordedPeriod, left: null, clock: '' };
+      return { phase: 'play', period, left, clock: mmss(left) };
+    }
+
+    // Past regulation. An OT goal ends it (sudden death), so a lead means it's over.
+    if (recordedPeriod === OT && tied === false) return { phase: 'over', period: OT, left: 0, clock: '00:00' };
+    const inOT = tied === true || recordedPeriod === OT;
+    if (!inOT) return { phase: 'over', period: PERIODS, left: 0, clock: '00:00' };
+    if (elapsed < REG_SECS + OT_SECS) {
+      const left = REG_SECS + OT_SECS - elapsed;
+      return { phase: 'play', period: OT, left, clock: mmss(left) };
+    }
+    return { phase: 'play', period: SO, left: null, clock: '' };
   }
 
-  /* Short public label, e.g. "2nd · ~12:40 left" */
+  const isTied = g => (g.home_score != null && g.away_score != null) ? g.home_score === g.away_score : null;
+
+  /* Short public label, e.g. "2nd · ~12:40 left", "OT · ~03:10 left", "Shootout" */
   function label(game, ordinal) {
-    const e = estimate(game.starts_at, game.period);
+    const e = estimate(game.starts_at, game.period, Date.now(), isTied(game));
     if (e.phase === 'pre') return 'Puck drop soon';
-    if (e.phase === 'over') return `${ordinal(e.period)} · final minutes`;
+    if (e.period === SO) return 'Shootout';
+    if (e.phase === 'over') return e.period === OT ? 'OT · winner scored' : `${ordinal(e.period)} · final minutes`;
     if (e.left == null) return ordinal(e.period);
     return `${ordinal(e.period)} · ~${e.clock} left`;
   }
 
-  window.IvyGameTime = { estimate, label, PERIODS };
+  /* "Final", "Final (OT)" or "Final (SO)" */
+  const finalLabel = g => g.decided_in === 'OT' ? 'Final (OT)' : g.decided_in === 'SO' ? 'Final (SO)' : 'Final';
+
+  window.IvyGameTime = { estimate, label, finalLabel, isTied, PERIODS, OT, SO };
 })();
