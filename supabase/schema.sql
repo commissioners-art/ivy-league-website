@@ -273,6 +273,9 @@ create policy "admin delete regs" on registrations for delete using (is_admin())
 -- Overtime/shootout columns and the NHL-style standings are in
 -- supabase/overtime.sql (run that after this one too).
 
+-- ---------- APs (call-ups) --------------------------------------
+-- Defined in supabase/ap.sql (run that file after this one).
+
 -- ---------- realtime ---------------------------------------------
 alter publication supabase_realtime add table games;
 alter publication supabase_realtime add table game_events;

@@ -141,12 +141,13 @@ function parseGameTime(v) {
 async function gameSheet(id) {
   clearInterval(tick);
   const { data: g } = await sb.from('games').select('*, home:home_team_id(id,name), away:away_team_id(id,name)').eq('id', id).single();
-  const { data: players } = await sb.from('players').select('id,first_name,last_name,jersey_number,team_id')
-    .in('team_id', [g.home_team_id, g.away_team_id].filter(Boolean)).order('jersey_number', { nullsFirst: false });
+  const loadPlayers = async () => (await sb.from('players').select('id,first_name,last_name,jersey_number,team_id,status')
+    .in('team_id', [g.home_team_id, g.away_team_id].filter(Boolean)).order('jersey_number', { nullsFirst: false })).data;
+  let players = await loadPlayers();
 
   const sides = [g.away_team_id, g.home_team_id].filter(Boolean);
   const teamName = tid => tid === g.home_team_id ? (g.home?.name ?? 'Home') : (g.away?.name ?? 'Away');
-  const pName = p => `#${p.jersey_number ?? '–'} ${p.first_name} ${p.last_name}`;
+  const pName = p => `#${p.jersey_number ?? '–'} ${p.first_name} ${p.last_name}${p.status === 'ap' ? ' (AP)' : ''}`;
   let suspBy = new Map(), suspList = [];
 
   /* One dropdown with both benches, grouped by team. The team is taken from the player. */
@@ -203,6 +204,15 @@ async function gameSheet(id) {
           <div class="rule mb-1">Game status</div>
           <button id="go-live" class="btn ${g.status === 'live' ? 'btn-quiet' : 'btn-primary'}">${g.status === 'live' ? 'Game is live' : 'Start game (go live)'}</button>
           <button id="go-final" class="btn btn-quiet">Finalize game</button>
+        </div>
+
+        <div class="panel p-5 grid gap-2">
+          <div class="flex items-center gap-2">
+            <div class="rule flex-1">APs tonight</div>
+            <button id="ap-refresh" class="text-xs font-semibold hover:underline" style="color:var(--ivy)">Refresh</button>
+          </div>
+          <div id="ap-list" class="grid"></div>
+          <p class="text-xs text-gray-500">APs add themselves by scanning the AP QR code (ap.html). They show up here within 30 seconds. Remove anyone who isn't playing.</p>
         </div>
 
         <div class="panel p-5 text-xs text-gray-600 grid gap-1">
@@ -305,7 +315,8 @@ async function gameSheet(id) {
     if (!box.querySelector('[data-when="time"]').value && e.phase === 'play' && e.clock) box.querySelector('[data-when="time"]').placeholder = `Time, e.g. ${e.clock}`;
   };
   ['goal', 'pen'].forEach(prefill);
-  tick = setInterval(showEstimate, 15000);
+  let ticks = 0;
+  tick = setInterval(() => { showEstimate(); if (++ticks % 2 === 0) reloadPlayers(); }, 15000);
   ['goal', 'pen'].forEach(f => when(f).querySelector('[data-when="time"]').addEventListener('focus', ev => {
     // Fill the estimate on focus so it's one keystroke to accept or overwrite.
     const e = IvyGameTime.estimate(state.starts_at, state.period, Date.now(), IvyGameTime.isTied(state));
@@ -483,6 +494,32 @@ async function gameSheet(id) {
     loadSusp();
   });
 
+  /* ---- APs: they check themselves in from ap.html, so keep the list fresh ---- */
+  const renderAps = () => {
+    const aps = (players || []).filter(p => p.status === 'ap');
+    $('ap-list').innerHTML = aps.length ? aps.map(p => `
+      <div class="flex items-center gap-3 text-sm py-2 border-b" style="border-color:var(--line)">
+        <span class="flex-1"><b>${esc(pName(p))}</b> <span class="text-gray-500">${esc(teamName(p.team_id))}</span></span>
+        <button data-del-ap="${p.id}" class="text-xs text-red-700 hover:underline">Remove</button>
+      </div>`).join('') : '<p class="text-sm text-gray-500">No APs on either team yet.</p>';
+  };
+  async function reloadPlayers() {
+    const fresh = await loadPlayers();
+    if (!fresh) return;
+    const changed = JSON.stringify(fresh) !== JSON.stringify(players);
+    players = fresh;
+    if (changed) { fillPlayers(); renderAps(); }
+  }
+  $('ap-refresh').onclick = async () => { await reloadPlayers(); renderAps(); toast('Players refreshed.'); };
+  $('ap-list').addEventListener('click', async e => {
+    const b = e.target.closest('[data-del-ap]'); if (!b) return;
+    if (!confirm('Remove this AP from the team? Do this only if they are not actually playing.')) return;
+    const { error } = await sb.from('players').delete().eq('id', b.dataset.delAp);
+    if (error) return toast('Could not remove them.', false);
+    toast('AP removed.');
+    reloadPlayers();
+  });
+
   /* ---- game sheet log ---- */
   async function loadSheet() {
     const { data } = await sb.from('game_events')
@@ -534,6 +571,7 @@ async function gameSheet(id) {
   };
 
   fillPlayers();
+  renderAps();
   loadSusp();
   loadSheet();
 }
@@ -763,6 +801,20 @@ async function teamsView() {
         Renaming one here does not rename it on teams already using the old name.</p>
     </div>
 
+    <div class="panel p-5 mb-6 max-w-2xl flex flex-wrap items-center gap-5">
+      <img src="assets/img/ap-qr.png" alt="AP check-in QR code" class="w-28 h-28 rounded-sm border" style="border-color:var(--line)">
+      <div class="flex-1 min-w-[14rem]">
+        <div class="rule mb-2">AP check-in QR code</div>
+        <p class="text-sm text-gray-600">APs scan this, type their name, pick the team and their number. They're added to that roster as an AP.
+          Post it at the rink or on the bench door.</p>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <a href="ap-poster.html" target="_blank" rel="noopener" class="btn btn-primary !py-2 !text-xs">Print poster</a>
+          <a href="assets/img/ap-qr.png" download="ivy-ap-qr.png" class="btn btn-quiet !py-2 !text-xs">Download QR</a>
+          <a href="ap.html" target="_blank" rel="noopener" class="btn btn-quiet !py-2 !text-xs">Open check-in page</a>
+        </div>
+      </div>
+    </div>
+
     <div class="panel p-5 mb-6">
       <div class="rule mb-3">Add a team</div>
       <div class="grid md:grid-cols-4 gap-3">
@@ -791,7 +843,7 @@ async function teamsView() {
               <td><select class="field !py-1 !text-xs" data-pf="position">
                 ${['Forward', 'Defence', 'Goalie'].map(x => `<option ${x === p.position ? 'selected' : ''}>${x}</option>`).join('')}</select></td>
               <td><select class="field !py-1 !text-xs" data-pf="status">
-                ${['active', 'spare', 'inactive'].map(x => `<option ${x === p.status ? 'selected' : ''}>${x}</option>`).join('')}</select></td>
+                ${[['active', 'active'], ['ap', 'AP'], ['spare', 'spare'], ['inactive', 'inactive']].map(([v, l]) => `<option value="${v}" ${v === p.status ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
               <td><button data-delp="${p.id}" class="text-xs text-red-700 hover:underline">Remove</button></td>
             </tr>`).join('') || '<tr><td colspan="5" class="text-sm text-gray-500">Roster empty — add one below, or approve a registration.</td></tr>'}
           </tbody>

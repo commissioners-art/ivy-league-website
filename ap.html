@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AP check-in — Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css?v=2026110702">
+<script src="assets/js/preload.js?v=2026110702"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<section class="crest-field text-white py-10">
+  <div class="shell">
+    <h1 class="display text-[clamp(2rem,5vw,3.4rem)]">AP check-in</h1>
+    <p class="serif text-white/80 mt-2 max-w-xl">Playing as an AP tonight? Add yourself to the team so your goals and points count. It takes 20 seconds.</p>
+  </div>
+</section>
+
+<section class="shell py-10 max-w-xl">
+  <form id="ap-form" class="panel p-6 grid gap-5">
+    <div class="grid grid-cols-2 gap-4">
+      <div><label class="label" for="first">First name</label><input id="first" class="field" autocomplete="given-name" required></div>
+      <div><label class="label" for="last">Last name</label><input id="last" class="field" autocomplete="family-name" required></div>
+    </div>
+
+    <div><label class="label" for="team">Team you're playing for</label>
+      <select id="team" class="field" required><option value="">Loading teams…</option></select></div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div><label class="label" for="number">Number you're wearing</label>
+        <input id="number" class="field tnum" type="number" inputmode="numeric" min="0" max="99" placeholder="e.g. 77"></div>
+      <div><label class="label" for="position">Position</label>
+        <select id="position" class="field"><option>Forward</option><option>Defence</option><option>Goalie</option></select></div>
+    </div>
+
+    <button class="btn btn-primary w-full" id="go">Add me to the team</button>
+    <p id="msg" class="text-sm hidden"></p>
+  </form>
+
+  <div id="done" class="hidden panel overflow-hidden">
+    <div id="done-band" class="p-6 text-white" style="background:var(--ivy)">
+      <p class="text-xs uppercase tracking-widest text-white/70">You're on the sheet</p>
+      <p id="done-title" class="display text-3xl mt-2"></p>
+      <p id="done-sub" class="serif text-white/85 mt-2"></p>
+    </div>
+    <div class="p-6 grid gap-3">
+      <p class="text-sm text-gray-600">Next time you play for this team you don't need to do anything. If you play for a different team, scan the code again and your details will be filled in.</p>
+      <button id="again" class="btn btn-quiet w-full">Check in for another team</button>
+    </div>
+  </div>
+</section>
+
+<footer id="site-footer"></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js?v=2026110702"></script>
+<script src="assets/js/app.js?v=2026110702"></script>
+<script>
+document.addEventListener('ivy:ready', async () => {
+  const { esc, fmtDate, fmtTime } = window.Ivy;
+  const $ = id => document.getElementById(id);
+
+  /* The phone remembers the AP so they never type their name twice. */
+  const KEY = 'ivy.ap';
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
+  if (saved.first) $('first').value = saved.first;
+  if (saved.last) $('last').value = saved.last;
+  if (saved.position) $('position').value = saved.position;
+
+  /* Teams, with tonight's games at the top. */
+  const now = new Date();
+  const dayStart = new Date(now.getTime() - 12 * 3600e3).toISOString();
+  const dayEnd = new Date(now.getTime() + 12 * 3600e3).toISOString();
+  const [{ data: teams }, { data: games }] = await Promise.all([
+    sb.from('teams').select('id,name,division,colour').order('division').order('sort').order('name'),
+    sb.from('games').select('starts_at,home_team_id,away_team_id,status')
+      .gte('starts_at', dayStart).lte('starts_at', dayEnd).neq('status', 'final').order('starts_at')
+  ]);
+  const today = fmtDate(now.toISOString());
+  const tonight = new Map();
+  (games || []).filter(g => fmtDate(g.starts_at) === today).forEach(g =>
+    [g.home_team_id, g.away_team_id].forEach(t => { if (t && !tonight.has(t)) tonight.set(t, g.starts_at); }));
+
+  const byId = new Map((teams || []).map(t => [t.id, t]));
+  const opt = t => `<option value="${t.id}">${esc(t.name)}${tonight.has(t.id) ? ` · ${fmtTime(tonight.get(t.id))}` : ''}</option>`;
+  const playing = (teams || []).filter(t => tonight.has(t.id)).sort((a, b) => tonight.get(a.id).localeCompare(tonight.get(b.id)));
+  const divisions = [...new Set((teams || []).map(t => t.division))];
+  $('team').innerHTML = `<option value="">Choose a team</option>` +
+    (playing.length ? `<optgroup label="Playing tonight">${playing.map(opt).join('')}</optgroup>` : '') +
+    divisions.map(d => `<optgroup label="${esc(d)} division">${teams.filter(t => t.division === d && !tonight.has(t.id)).map(opt).join('')}</optgroup>`).join('');
+
+  /* Remember the number they wore for each team. */
+  $('team').addEventListener('change', () => {
+    const n = (saved.numbers || {})[$('team').value];
+    if (n != null) $('number').value = n;
+  });
+
+  const showMsg = (text, ok) => {
+    $('msg').className = 'text-sm ' + (ok ? 'font-semibold' : 'text-red-700');
+    $('msg').style.color = ok ? 'var(--ivy)' : '';
+    $('msg').textContent = text;
+  };
+
+  $('ap-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const first = $('first').value.trim(), last = $('last').value.trim(), team = $('team').value;
+    const num = $('number').value === '' ? null : parseInt($('number').value, 10);
+    if (!first || !last) return showMsg('Enter your first and last name.');
+    if (!team) return showMsg('Pick the team you are playing for.');
+    if (num != null && (isNaN(num) || num < 0 || num > 99)) return showMsg('Jersey number must be 0 to 99.');
+
+    $('go').disabled = true; $('go').textContent = 'Adding you…';
+    const { data, error } = await sb.rpc('ap_checkin', {
+      p_first: first, p_last: last, p_team_id: team, p_number: num, p_position: $('position').value
+    });
+    $('go').disabled = false; $('go').textContent = 'Add me to the team';
+    if (error) {
+      const m = error.message || '';
+      return showMsg(/name|number|team|Too many/i.test(m) && !/function/i.test(m) ? m
+        : 'That did not go through. Tell the scorekeeper your name and number instead.');
+    }
+
+    saved = { ...saved, first, last, position: $('position').value, numbers: { ...(saved.numbers || {}), [team]: num } };
+    try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {}
+
+    const t = byId.get(team) || {};
+    $('done-band').style.background = t.colour || 'var(--ivy)';
+    $('done-title').textContent = t.name || data?.team || 'Done';
+    const numText = data?.jersey_number != null ? `#${data.jersey_number} ` : '';
+    $('done-sub').textContent = data?.status === 'active'
+      ? `${numText}${first} ${last}, you're already on this team's roster. You're all set.`
+      : `${numText}${first} ${last} · AP. ${data?.existed ? 'Welcome back.' : 'Have a good game.'}`;
+    $('ap-form').classList.add('hidden');
+    $('done').classList.remove('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  $('again').onclick = () => {
+    $('done').classList.add('hidden'); $('ap-form').classList.remove('hidden');
+    $('team').value = ''; $('number').value = ''; $('msg').classList.add('hidden');
+  };
+});
+</script>
+</body>
+</html>
