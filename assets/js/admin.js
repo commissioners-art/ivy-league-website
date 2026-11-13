@@ -1,7 +1,8 @@
 /* ---------------------------------------------------------------
-   admin.js — staff portal
-   Tabs: Scorekeeping · Registrations · Schedule · Teams · Pages ·
-         Payments · News
+   admin.js — the league office (admin/index.html)
+   Sidebar sections are listed in NAV below. The CRM views
+   (Dashboard, People, player profiles, Suspensions, Email lists)
+   live in office.js; the rest are here.
    Scorekeepers see Scorekeeping only; admins see everything.
 --------------------------------------------------------------- */
 const sb = window.sb;
@@ -12,7 +13,7 @@ const fmtDT = iso => new Date(iso).toLocaleString('en-CA', { weekday: 'short', m
 const ordinal = n => ['', '1st', '2nd', '3rd', 'OT', 'SO'][n] || `${n}`;
 const toLocalInput = iso => { const d = new Date(iso); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 
-let me = null, view = 'score', tick = null;
+let me = null, view = 'home', tick = null;
 /* keyboard shortcuts for the open game sheet (set by gameSheet, cleared on every render) */
 let sheetKeys = null;
 document.addEventListener('keydown', e => sheetKeys && sheetKeys(e));
@@ -46,11 +47,14 @@ sb.auth.onAuthStateChange(async (_e, session) => {
 sb.auth.getSession().then(({ data }) => { if (data.session) boot(data.session); });
 
 async function boot(session) {
+  if (boot.started) return;          // getSession and onAuthStateChange can both fire on load
+  boot.started = true;
   const { data: staff } = await sb.from('staff').select('*').eq('id', session.user.id).maybeSingle();
   if (!staff) {
     document.getElementById('login-msg').textContent = 'That account is not on the staff list. Ask an admin to add you.';
     document.getElementById('login-msg').classList.remove('hidden');
     await sb.auth.signOut();
+    boot.started = false;
     return;
   }
   me = staff;
@@ -58,26 +62,88 @@ async function boot(session) {
   document.getElementById('portal').classList.remove('hidden');
   document.getElementById('who').textContent = `${staff.full_name || staff.email} · ${staff.role}`;
 
-  const tabs = me.role === 'admin'
-    ? [['score', 'Scorekeeping'], ['regs', 'Registrations'], ['sched', 'Schedule'], ['teams', 'Teams & rosters'], ['pages', 'Pages'], ['morepages', 'More Pages'], ['photos', 'Photos'], ['pay', 'Payments'], ['news', 'News']]
-    : [['score', 'Scorekeeping']];
-
-  document.getElementById('tabs').innerHTML = tabs.map(([k, l]) =>
-    `<button data-tab="${k}" class="px-4 py-2 text-sm font-semibold rounded-sm whitespace-nowrap">${l}</button>`).join('');
-  document.getElementById('tabs').addEventListener('click', e => {
-    const b = e.target.closest('[data-tab]'); if (!b) return;
-    view = b.dataset.tab; render();
-  });
-  render();
+  buildNav();
+  if (me.role === 'admin') refreshCounts();
+  window.addEventListener('hashchange', route);
+  route();
 }
 
-function render() {
+/* ---- Sections of the office. Scorekeepers only get Scorekeeping. ---- */
+const NAV = [
+  ['Overview', [['home', 'Dashboard', () => dashView()]]],
+  ['League', [
+    ['people', 'People', arg => peopleView(arg)],
+    ['regs', 'Registrations', () => regsView()],
+    ['teams', 'Teams & rosters', () => teamsView()],
+    ['susp', 'Suspensions', () => suspView()],
+    ['comms', 'Email lists', () => commsView()]
+  ]],
+  ['Game day', [
+    ['score', 'Scorekeeping', () => scoreView()],
+    ['sched', 'Schedule', () => schedView()]
+  ]],
+  ['Money', [['pay', 'Payments', () => payView()]]],
+  ['Website', [
+    ['pages', 'Pages', () => pagesView()],
+    ['morepages', 'More pages', () => morePagesView()],
+    ['photos', 'Photos', () => photosView()],
+    ['news', 'News', () => newsView()]
+  ]]
+];
+/* views reached from inside another view, not listed in the sidebar */
+const HIDDEN_VIEWS = { player: { parent: 'people', run: arg => playerView(arg) } };
+
+const allowed = key => me.role === 'admin' || key === 'score';
+
+function buildNav() {
+  document.getElementById('tabs').innerHTML = NAV.map(([grp, items]) => {
+    const mine = items.filter(([k]) => allowed(k));
+    return mine.length ? `<p class="grp">${grp}</p>` + mine.map(([k, l]) =>
+      `<button data-tab="${k}"><span>${l}</span><span class="count hidden" data-count="${k}"></span></button>`).join('') : '';
+  }).join('');
+  document.getElementById('tabs').addEventListener('click', e => {
+    const b = e.target.closest('[data-tab]'); if (!b) return;
+    go(b.dataset.tab);
+  });
+  const search = document.getElementById('office-search');
+  if (me.role !== 'admin') search.classList.add('hidden');
+  search.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = document.getElementById('office-q').value.trim();
+    go('people', q);
+  });
+}
+
+/* #/people, #/player/<id>, #/people/<search> */
+function go(key, arg) {
+  const h = `#/${key}${arg ? '/' + encodeURIComponent(arg) : ''}`;
+  if (location.hash === h) route(); else location.hash = h;
+}
+
+function route() {
+  const [, key, arg] = (location.hash.match(/^#\/([\w-]+)(?:\/(.*))?$/) || []);
+  view = key && (allowed(key) || HIDDEN_VIEWS[key] && me.role === 'admin') ? key : (me.role === 'admin' ? 'home' : 'score');
+  render(arg ? decodeURIComponent(arg) : undefined);
+}
+
+function highlightNav(key) {
+  const on = HIDDEN_VIEWS[key]?.parent || key;
+  document.querySelectorAll('#tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === on));
+}
+
+/* Small badge next to a sidebar item (e.g. new registrations). 0 hides it. */
+function setCount(key, n) {
+  const el = document.querySelector(`[data-count="${key}"]`); if (!el) return;
+  el.textContent = n; el.classList.toggle('hidden', !n);
+}
+
+function render(arg) {
   clearInterval(tick);
   sheetKeys = null;
-  document.querySelectorAll('#tabs [data-tab]').forEach(b => {
-    b.className = `px-4 py-2 text-sm font-semibold rounded-sm whitespace-nowrap ${b.dataset.tab === view ? 'bg-white/20 text-white' : 'text-white/65 hover:text-white'}`;
-  });
-  ({ score: scoreView, regs: regsView, sched: schedView, teams: teamsView, pages: pagesView, morepages: morePagesView, photos: photosView, pay: payView, news: newsView }[view])();
+  highlightNav(view);
+  window.scrollTo(0, 0);
+  if (HIDDEN_VIEWS[view]) return HIDDEN_VIEWS[view].run(arg);
+  NAV.flatMap(([, items]) => items).find(([k]) => k === view)[2](arg);
 }
 
 const mount = html => {
@@ -602,7 +668,7 @@ async function regsView() {
         <tbody>${(regs || []).map(r => `
           <tr data-id="${r.id}">
             <td class="text-gray-500 whitespace-nowrap">${fmtDT(r.created_at)}</td>
-            <td class="font-semibold">${esc(r.first_name)} ${esc(r.last_name)}
+            <td class="font-semibold"><button class="underline text-left" data-profile="${r.player_id || 'r:' + r.id}">${esc(r.first_name)} ${esc(r.last_name)}</button>
               ${r.notes ? `<div class="text-xs text-gray-500 font-normal max-w-48">${esc(r.notes)}</div>` : ''}</td>
             <td class="text-xs"><a href="mailto:${esc(r.email)}" class="underline">${esc(r.email)}</a><br>${esc(r.phone ?? '')}</td>
             <td>${esc(r.position ?? '')}</td><td>${r.jersey_number ?? ''}</td>
@@ -627,12 +693,14 @@ async function regsView() {
     const val = sel.dataset.field === 'team_id' ? (sel.value || null) : sel.value;
     const { error } = await sb.from('registrations').update({ [sel.dataset.field]: val }).eq('id', id);
     toast(error ? 'Could not update that registration.' : 'Updated.', !error);
+    if (sel.dataset.field === 'status') refreshCounts();
   });
 
   /* Delete a registration. If it was approved onto a roster, offer to take the
      player off too: they're set inactive (hidden from the public roster) rather
      than deleted, so goals/penalties they already have stay on the record. */
   document.getElementById('view').addEventListener('click', async e => {
+    const prof = e.target.closest('[data-profile]'); if (prof) return go('player', prof.dataset.profile);
     const b = e.target.closest('[data-delreg]'); if (!b) return;
     const r = (regs || []).find(x => x.id === b.dataset.delreg); if (!r) return;
     const name = `${r.first_name} ${r.last_name}`;
@@ -757,9 +825,8 @@ async function schedView() {
     const sheet = e.target.closest('[data-sheet]');
     if (sheet) {
       view = 'score';
-      document.querySelectorAll('#tabs [data-tab]').forEach(b => {
-        b.className = `px-4 py-2 text-sm font-semibold rounded-sm whitespace-nowrap ${b.dataset.tab === 'score' ? 'bg-white/20 text-white' : 'text-white/65 hover:text-white'}`;
-      });
+      history.replaceState(null, '', '#/score');
+      highlightNav('score');
       return gameSheet(sheet.dataset.sheet);
     }
     const b = e.target.closest('[data-del]'); if (!b) return;
