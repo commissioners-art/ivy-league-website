@@ -1,0 +1,17 @@
+{
+  "name": "Milton Ivy League — My Team",
+  "short_name": "Ivy Team",
+  "description": "Your team's chat, schedule and roster.",
+  "id": "/team.html",
+  "start_url": "/team.html?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F9F7",
+  "theme_color": "#09522B",
+  "icons": [
+    { "src": "assets/img/app/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/img/app/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/img/app/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

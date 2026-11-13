@@ -1,8 +1,12 @@
 /* ---------------------------------------------------------------
    Team portal (team.html): tabs, chat bubbles, game cards.
+   Phones (and the installed app) get a bottom tab bar instead of
+   the top tabs; html.tp-app = opened from the home screen, so the
+   website header/footer are hidden and notch areas are padded.
 --------------------------------------------------------------- */
 #tp-hero { background: linear-gradient(160deg, var(--team, var(--ivy)) 0%, var(--ivy-deep) 140%); }
 
+.tp-top { display: flex; gap: .25rem; overflow-x: auto; }
 .tp-tab {
   padding: .7rem 1rem; font-size: .9rem; font-weight: 700; white-space: nowrap;
   color: rgba(255,255,255,.7); border-bottom: 3px solid transparent;
@@ -41,7 +45,7 @@
 
 .tp-game { display: flex; align-items: center; gap: 1rem; padding: .9rem 1.1rem; }
 .tp-game .when { width: 6.5rem; flex: none; font-size: .8rem; color: #4A5C52; }
-.tp-game .when b { display: block; font-size: 1rem; color: var(--ink); }
+.tp-game .when b { display: block; white-space: nowrap; font-size: 1rem; color: var(--ink); }
 .tp-game .vs { flex: 1; min-width: 0; font-weight: 700; }
 .tp-game .vs span { display: block; font-weight: 400; font-size: .8rem; color: #4A5C52; }
 .tp-game .res { font-weight: 800; white-space: nowrap; }
@@ -51,3 +55,50 @@
 .tp-tag { display: inline-block; margin-left: .45rem; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; padding: .1rem .35rem; border-radius: 2px; vertical-align: 1px; }
 .tp-tag.cap { background: var(--ivy); color: #fff; }
 .tp-tag.ap { background: var(--brass); color: #fff; }
+
+.tp-nextgame { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: 1.1rem 1.25rem; }
+
+.tp-toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 60;
+  bottom: calc(1.25rem + var(--tp-bar, 0px) + env(safe-area-inset-bottom));
+  padding: .5rem 1rem; border-radius: 6px; font-size: .875rem; color: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.2);
+}
+
+.tp-install {
+  display: flex; align-items: center; gap: .75rem; padding: .7rem .9rem; margin-bottom: 1rem;
+  border: 1px solid var(--line); border-radius: 6px; background: #fff; font-size: .875rem;
+}
+.tp-install.hidden { display: none; }
+
+/* ---- bottom tab bar ---- */
+.tp-bottom { display: none; }
+.tp-bottom button {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: .2rem;
+  padding: .55rem 0 .45rem; font-size: .68rem; font-weight: 700; color: #6B7C72;
+}
+.tp-bottom svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tp-bottom button.on { color: var(--ivy); }
+.tp-bottom button.on svg { stroke-width: 2.3; }
+
+@media (max-width: 767px) {
+  body.tp-in { --tp-bar: 62px; padding-bottom: calc(var(--tp-bar) + env(safe-area-inset-bottom)); }
+  body.tp-in .tp-top, body.tp-in #site-footer { display: none; }
+  body.tp-in .tp-bottom {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    background: rgba(255,255,255,.97); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom); backdrop-filter: blur(8px);
+  }
+  #tp-hero .shell { padding-top: 1.1rem; padding-bottom: 1.1rem; gap: .9rem; }
+  #tp-logo { width: 3rem; height: 3rem; }
+  .tp-body { padding-top: 1rem; }
+  /* the chat fills the screen above the tab bar (height set by fitChat() in team.js) */
+  body[data-tab="chat"] #tp-next { display: none; }
+  .tp-msg { max-width: 86%; }
+  .tp-game .when { width: 6.2rem; }
+  .tp-game { gap: .75rem; padding: .8rem .9rem; }
+}
+
+/* ---- opened from the home screen ---- */
+html.tp-app #site-header, html.tp-app #site-footer, html.tp-app #tp-install { display: none; }
+html.tp-app #tp-hero, html.tp-app #tp-signin { padding-top: env(safe-area-inset-top); }
+html.tp-app body { overscroll-behavior-y: none; }
