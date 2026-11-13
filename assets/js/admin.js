@@ -662,8 +662,9 @@ async function regsView() {
       </div>
       <button id="export" class="btn btn-quiet">Download CSV</button>
     </div>
-    <p class="text-sm text-gray-600 mb-4 max-w-2xl">Set a team and mark the registration approved — the player is added to that
-      roster automatically and appears on the public Teams page.</p>
+    <p class="text-sm text-gray-600 mb-4 max-w-2xl">Set a team and mark the registration approved — once they've paid
+      (in full, or the first plan payment), the player is added to that roster automatically and appears on the public Teams page.
+      Approve someone who hasn't paid yet and they join the roster the moment their payment comes in. Mark them Comped to skip payment.</p>
     <div class="panel overflow-x-auto">
       <table class="grid-table">
         <thead><tr><th>Received</th><th>Player</th><th>Contact</th><th>Pos</th><th>#</th>
@@ -678,7 +679,7 @@ async function regsView() {
             <td>${esc(r.division ?? '')}</td>
             <td><select class="field !py-1 !text-xs" data-field="team_id">${teamOpts(r)}</select></td>
             <td><select class="field !py-1 !text-xs" data-field="payment_status">
-              ${['unpaid', 'paid', 'refunded', 'comped'].map(s => `<option ${s === r.payment_status ? 'selected' : ''}>${s}</option>`).join('')}
+              ${PAY_STATUSES.map(s => `<option value="${s}" ${s === r.payment_status ? 'selected' : ''}>${PAY_LABEL[s]}${s === r.payment_status && r.payment_type === 'plan' && r.installments_total ? ` ${r.installments_paid ?? 0}/${r.installments_total}` : ''}</option>`).join('')}
             </select></td>
             <td><select class="field !py-1 !text-xs" data-field="status">
               ${['new', 'approved', 'waitlist', 'declined'].map(s => `<option ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}
@@ -695,7 +696,9 @@ async function regsView() {
     const id = sel.closest('tr').dataset.id;
     const val = sel.dataset.field === 'team_id' ? (sel.value || null) : sel.value;
     const { error } = await sb.from('registrations').update({ [sel.dataset.field]: val }).eq('id', id);
-    toast(error ? 'Could not update that registration.' : 'Updated.', !error);
+    const r = (regs || []).find(x => x.id === id);
+    const waiting = !error && sel.dataset.field === 'status' && val === 'approved' && r && !r.player_id && !ROSTER_READY.includes(r.payment_status);
+    toast(error ? 'Could not update that registration.' : waiting ? 'Approved. They join the roster once payment is complete.' : 'Updated.', !error);
     if (sel.dataset.field === 'status') refreshCounts();
   });
 
@@ -721,7 +724,7 @@ async function regsView() {
   });
 
   document.getElementById('export').onclick = () => {
-    const cols = ['created_at', 'first_name', 'last_name', 'email', 'phone', 'position', 'jersey_number', 'shirt_size', 'division', 'emergency_name', 'emergency_phone', 'payment_status', 'status', 'notes'];
+    const cols = ['created_at', 'first_name', 'last_name', 'email', 'phone', 'position', 'jersey_number', 'shirt_size', 'division', 'emergency_name', 'emergency_phone', 'payment_status', 'payment_type', 'plan_status', 'installments_paid', 'installments_total', 'amount_paid_cents', 'amount_total_cents', 'next_payment_at', 'status', 'notes'];
     const csv = [cols.join(',')].concat((regs || []).map(r =>
       cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(','))).join('\n');
     const a = document.createElement('a');
@@ -1408,12 +1411,15 @@ async function payViewInner() {
 
   mount(`
     <div class="flex flex-wrap items-center justify-between gap-3 mb-1">
-      <h2 class="display text-2xl">Payment links</h2>
+      <h2 class="display text-2xl">Payment options</h2>
       <button id="set-pin" class="btn btn-quiet !text-xs !py-2">Set / change PIN</button>
     </div>
-    <p class="text-sm text-gray-600 mb-5 max-w-2xl">Create the link in Stripe, paste it here, and it appears on the registration page.
-      Add as many links as you need — one per division, per season, or per fee type — using "Add a link" below.
-      Untick "Active" to retire a link without deleting it.</p>
+    <p class="text-sm text-gray-600 mb-3 max-w-2xl">Each option shows on the registration page. Give it a <b>Stripe price ID</b>
+      (<code>price_…</code>, from the product in Stripe) and players pick it inside the registration form and pay straight away:
+      a one-time price is a full payment, a monthly price is a payment plan. Payments then show up in the office by themselves.</p>
+    <p class="text-sm text-gray-600 mb-5 max-w-2xl">For a plan, set <b>Number of payments</b> and the plan stops itself after the last one
+      (leave it blank to keep charging until cancelled). An option with only a Stripe link and no price ID still shows as a separate
+      "Pay with Stripe" button, like before. Untick "Active" to retire an option without deleting it.</p>
 
     <div class="panel p-5 mb-6 max-w-3xl" style="border-color:var(--brass)">
       <div class="rule mb-3">Registration page override</div>
@@ -1426,14 +1432,16 @@ async function payViewInner() {
     </div>
 
     <div class="panel p-5 mb-6 max-w-3xl">
-      <div class="rule mb-3">Add a link</div>
+      <div class="rule mb-3">Add an option</div>
       <div class="grid md:grid-cols-2 gap-3">
         <input id="p-label" class="field" placeholder="Label — e.g. Lager Division, full season">
         <input id="p-price" class="field" placeholder="Price text — e.g. $425 + HST">
-        <input id="p-url" class="field md:col-span-2" placeholder="https://buy.stripe.com/...">
-        <input id="p-desc" class="field md:col-span-2" placeholder="Short description (optional)">
+        <input id="p-stripe" class="field" placeholder="Stripe price ID — price_...">
+        <input id="p-inst" class="field" type="number" min="1" placeholder="Number of payments (plans only)">
+        <input id="p-url" class="field md:col-span-2" placeholder="Or a Stripe link instead — https://buy.stripe.com/...">
+        <input id="p-desc" class="field md:col-span-2" placeholder="Short description (optional) — e.g. 4 monthly payments of $110">
       </div>
-      <button id="add-link" class="btn btn-primary mt-3">Add link</button>
+      <button id="add-link" class="btn btn-primary mt-3">Add option</button>
     </div>
 
     <div class="grid gap-3 max-w-3xl">
@@ -1441,12 +1449,17 @@ async function payViewInner() {
         <div class="panel p-4 grid md:grid-cols-2 gap-3" data-link="${l.id}">
           <input class="field" data-lf="label" value="${esc(l.label)}">
           <input class="field" data-lf="price_text" value="${esc(l.price_text ?? '')}">
-          <input class="field md:col-span-2" data-lf="url" value="${esc(l.url)}">
+          <input class="field" data-lf="stripe_price_id" value="${esc(l.stripe_price_id ?? '')}" placeholder="Stripe price ID — price_...">
+          <input class="field" data-lf="installments" type="number" min="1" value="${l.installments ?? ''}" placeholder="Number of payments (plans only)">
+          <input class="field md:col-span-2" data-lf="url" value="${esc(l.url ?? '')}" placeholder="Stripe link (only used without a price ID)">
           <input class="field md:col-span-2" data-lf="description" value="${esc(l.description ?? '')}">
+          <p class="md:col-span-2 text-xs" data-stripe-state="${l.id}"></p>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" data-lf="active" ${l.active ? 'checked' : ''}> Active on the site</label>
-          <div class="text-right"><button data-dell="${l.id}" class="text-xs text-red-700 hover:underline">Delete link</button></div>
+          <div class="text-right"><button data-dell="${l.id}" class="text-xs text-red-700 hover:underline">Delete option</button></div>
         </div>`).join('') || '<p class="text-sm text-gray-500">No payment links yet.</p>'}
     </div>`);
+
+  checkOptionsWithStripe();
 
   document.getElementById('save-override').onclick = async () => {
     const { error } = await sb.from('site_content')
@@ -1463,28 +1476,68 @@ async function payViewInner() {
 
   document.getElementById('add-link').onclick = async () => {
     const url = document.getElementById('p-url').value.trim();
-    if (!url.startsWith('http')) return toast('Paste the full Stripe URL.', false);
-    await sb.from('payment_links').insert({
+    const priceId = document.getElementById('p-stripe').value.trim();
+    const inst = parseInt(document.getElementById('p-inst').value, 10);
+    if (priceId && !priceId.startsWith('price_')) return toast('A Stripe price ID starts with price_ (not prod_).', false);
+    if (!priceId && !url.startsWith('http')) return toast('Add a Stripe price ID, or paste the full Stripe link.', false);
+    const { error } = await sb.from('payment_links').insert({
       label: document.getElementById('p-label').value || 'Registration',
       price_text: document.getElementById('p-price').value,
-      description: document.getElementById('p-desc').value, url
+      description: document.getElementById('p-desc').value, url: url || null,
+      stripe_price_id: priceId || null, installments: inst > 0 ? inst : null
     });
+    if (error) return toast(/column|schema cache/i.test(error.message) ? 'Run supabase/stripe.sql in Supabase first.' : 'Could not add that option.', false);
     payView();
   };
 
   document.getElementById('view').addEventListener('change', async e => {
     const f = e.target.closest('[data-lf]'); if (!f) return;
     const id = f.closest('[data-link]').dataset.link;
-    const val = f.type === 'checkbox' ? f.checked : f.value;
+    let val = f.type === 'checkbox' ? f.checked : f.value.trim();
+    if (f.dataset.lf === 'installments') val = parseInt(val, 10) > 0 ? parseInt(val, 10) : null;
+    if (f.dataset.lf === 'stripe_price_id' || f.dataset.lf === 'url') val = val || null;
+    if (f.dataset.lf === 'stripe_price_id' && val && !val.startsWith('price_')) return toast('A Stripe price ID starts with price_ (not prod_).', false);
     const { error } = await sb.from('payment_links').update({ [f.dataset.lf]: val }).eq('id', id);
     toast(error ? 'Not saved.' : 'Saved.', !error);
+    if (!error) checkOptionsWithStripe();
   });
 
   document.getElementById('view').addEventListener('click', async e => {
     const b = e.target.closest('[data-dell]'); if (!b) return;
-    if (!confirm('Delete this payment link?')) return;
+    if (!confirm('Delete this payment option?')) return;
     await sb.from('payment_links').delete().eq('id', b.dataset.dell);
     payView();
+  });
+}
+
+/* Ask Stripe whether each option is still live. The registration page only
+   shows options that are ticked Active here AND active in Stripe, so this
+   explains why an option is (or isn't) showing. */
+async function checkOptionsWithStripe() {
+  const cells = document.querySelectorAll('[data-stripe-state]');
+  if (!cells.length) return;
+  cells.forEach(c => { c.textContent = 'Checking with Stripe…'; c.className = 'md:col-span-2 text-xs text-gray-500'; });
+  let out = null;
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch(`${IVY_CONFIG.SUPABASE_URL}/functions/v1/stripe/options`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: IVY_CONFIG.SUPABASE_ANON_KEY, Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ all: true })
+    });
+    if (res.ok) out = await res.json();
+  } catch { /* function not set up yet */ }
+  const by = new Map((out?.options || []).map(o => [o.id, o]));
+  cells.forEach(c => {
+    const o = by.get(c.dataset.stripeState);
+    if (!out) { c.textContent = 'Couldn’t check with Stripe (the Stripe function isn’t set up yet, see STRIPE-SETUP.md).'; return; }
+    if (!o) return;
+    const shown = o.active && o.stripe_ok;
+    c.className = `md:col-span-2 text-xs ${shown ? 'font-semibold' : 'text-red-700'}`;
+    c.style.color = shown ? 'var(--accent, var(--ivy))' : '';
+    c.textContent = shown ? '● Showing on the registration page: active here and in Stripe.'
+      : !o.active ? `○ Hidden: "Active on the site" is off.${o.stripe_ok ? '' : ' ' + o.stripe_reason}`
+      : `○ Hidden from the site: ${o.stripe_reason}`;
   });
 }
 

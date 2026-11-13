@@ -198,7 +198,7 @@ function chrome() {
           <p class="text-sm text-white/75">${esc(CFG.VENUE)}<br>
             <a class="hover:text-white" href="mailto:${esc(CFG.CONTACT_EMAIL)}" data-cms="footer.email">${esc(CFG.CONTACT_EMAIL)}</a>
           </p>
-          <p class="text-xs text-white/45 mt-6">© ${new Date().getFullYear()} Milton Ivy League</p>
+          <p class="text-xs text-white/45 mt-6">© ${new Date().getFullYear()} Milton Ivy League · <a href="terms.html" class="underline hover:text-white">Terms and Conditions</a></p>
         </div>
       </div>
     </div>`;
