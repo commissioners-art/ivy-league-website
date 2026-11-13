@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<!-- Every relative link in the office (assets, preview links, page.html?slug=…) resolves from the site root. -->
+<base href="/">
+<title>League office — Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="assets/css/ivy.css?v=2026111301">
+<link rel="stylesheet" href="assets/css/office.css?v=2026111301">
+</head>
+<body class="office">
+
+<!-- ── Login ──────────────────────────────────────────────────── -->
+<section id="login" class="min-h-screen grid place-items-center px-4 crest-field">
+  <div class="w-full max-w-sm">
+    <div class="text-center text-white mb-8">
+      <img src="assets/img/logo.png" alt="" class="h-20 w-20 rounded-full mx-auto mb-4">
+      <h1 class="display text-2xl">League office</h1>
+      <p class="text-sm text-white/65 mt-1">Players, teams, payments and the website, in one place</p>
+    </div>
+    <form id="login-form" class="panel p-6 grid gap-4">
+      <div><label class="label" for="li-email">Email</label><input id="li-email" type="email" class="field" required autocomplete="username"></div>
+      <div><label class="label" for="li-pass">Password</label><input id="li-pass" type="password" class="field" required autocomplete="current-password"></div>
+      <button class="btn btn-primary w-full">Sign in</button>
+      <p id="login-msg" class="text-sm text-red-700 hidden"></p>
+      <p class="text-xs text-gray-500">Accounts are created by a league admin. <a href="index.html" class="underline">Back to the site</a>.</p>
+    </form>
+  </div>
+</section>
+
+<!-- ── Office ─────────────────────────────────────────────────── -->
+<div id="portal" class="hidden office-grid">
+  <aside class="office-side crest-field text-white">
+    <div class="flex items-center gap-3 px-5 pt-5 pb-4">
+      <img src="assets/img/logo.png" alt="" class="h-10 w-10 rounded-full">
+      <div class="leading-tight">
+        <p class="display text-base">League office</p>
+        <p class="text-[11px] text-white/60">Milton Ivy League</p>
+      </div>
+    </div>
+    <form id="office-search" class="px-4 pb-3" role="search">
+      <input id="office-q" type="search" class="office-search" placeholder="Find a player…" aria-label="Find a player" autocomplete="off">
+    </form>
+    <nav id="tabs" class="office-nav" aria-label="Office sections"></nav>
+    <div class="office-me px-5 py-4 text-xs">
+      <p id="who" class="text-white/70 truncate"></p>
+      <div class="flex gap-3 mt-2">
+        <a href="index.html" target="_blank" rel="noopener" class="text-white/70 hover:text-white underline">View site</a>
+        <button id="signout" class="text-white/70 hover:text-white underline">Sign out</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="office-main">
+    <div id="view"></div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js?v=2026111301"></script>
+<script>
+  window.sb = window.supabase.createClient(IVY_CONFIG.SUPABASE_URL, IVY_CONFIG.SUPABASE_ANON_KEY);
+</script>
+<script src="assets/js/league.js?v=2026111301"></script>
+<script src="assets/js/office.js?v=2026111301"></script>
+<script src="assets/js/admin.js?v=2026111301"></script>
+</body>
+</html>
