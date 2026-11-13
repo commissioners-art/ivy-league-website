@@ -102,12 +102,36 @@ async function applyGalleries() {
   nodes.forEach(el => {
     const imgs = (data || []).filter(g => g.section === el.dataset.gallery);
     if (imgs.length) {
-      el.innerHTML = imgs.map(g =>
-        `<img src="${esc(g.url)}" alt="${esc(g.alt ?? '')}" class="w-full h-48 object-cover rounded-md">`).join('');
+      /* Masonry columns: every photo keeps its own shape, so nothing
+         gets its top or bottom chopped off. Click to see it full size. */
+      el.className = 'photo-wall';
+      el.innerHTML = imgs.map(g => `
+        <a href="${esc(g.url)}" class="photo-wall-item" data-lightbox>
+          <img src="${esc(g.url)}" alt="${esc(g.alt ?? '')}" loading="lazy" decoding="async">
+        </a>`).join('');
       el.closest('section')?.classList.remove('hidden');
     }
   });
 }
+
+/* ---------- full-size photo viewer ---------- */
+document.addEventListener('click', e => {
+  const link = e.target.closest('[data-lightbox]');
+  if (!link || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  e.preventDefault();
+  const alt = link.querySelector('img')?.alt ?? '';
+  const box = document.createElement('div');
+  box.className = 'lightbox';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', alt || 'Photo');
+  box.innerHTML = `<img src="${esc(link.href)}" alt="${esc(alt)}"><button type="button" aria-label="Close">&times;</button>`;
+  const close = () => { box.remove(); document.removeEventListener('keydown', onKey); link.focus(); };
+  const onKey = ev => { if (ev.key === 'Escape') close(); };
+  box.addEventListener('click', ev => { if (ev.target.tagName !== 'IMG') close(); });
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(box);
+  box.querySelector('button').focus();
+});
 
 /* ---------- header / footer ---------- */
 const NAV = [
