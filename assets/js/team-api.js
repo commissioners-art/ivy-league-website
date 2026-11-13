@@ -22,8 +22,11 @@
       auth: { storageKey: 'ivy-team-auth', persistSession: true, autoRefreshToken: true, ...(storage ? { storage } : {}) }
     });
 
+    /* Before supabase/team-portal.sql has been run, the portal functions don't exist yet. */
+    const notSetUp = e => e && /schema cache|does not exist|Could not find the function|PGRST202|42883|42P01/i.test(`${e.message} ${e.code}`);
     const friendly = (e, fallback) =>
-      new Error(e && e.message && !/fetch|network|JWT|permission|schema cache/i.test(e.message) ? e.message : fallback);
+      notSetUp(e) ? new Error('The team portal is still being set up. Check back soon.')
+      : new Error(e && e.message && !/fetch|network|JWT|permission/i.test(e.message) ? e.message : fallback);
     const ok = ({ data, error }, fallback) => { if (error) throw friendly(error, fallback); return data; };
     const rpc = async (fn, args, fallback) => ok(await db.rpc(fn, args), fallback);
 
