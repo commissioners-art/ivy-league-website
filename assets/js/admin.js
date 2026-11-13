@@ -659,8 +659,9 @@ async function regsView() {
       </div>
       <button id="export" class="btn btn-quiet">Download CSV</button>
     </div>
-    <p class="text-sm text-gray-600 mb-4 max-w-2xl">Set a team and mark the registration approved — the player is added to that
-      roster automatically and appears on the public Teams page.</p>
+    <p class="text-sm text-gray-600 mb-4 max-w-2xl">Set a team and mark the registration approved — once they've paid
+      (in full, or the first plan payment), the player is added to that roster automatically and appears on the public Teams page.
+      Approve someone who hasn't paid yet and they join the roster the moment their payment comes in. Mark them Comped to skip payment.</p>
     <div class="panel overflow-x-auto">
       <table class="grid-table">
         <thead><tr><th>Received</th><th>Player</th><th>Contact</th><th>Pos</th><th>#</th>
@@ -692,7 +693,9 @@ async function regsView() {
     const id = sel.closest('tr').dataset.id;
     const val = sel.dataset.field === 'team_id' ? (sel.value || null) : sel.value;
     const { error } = await sb.from('registrations').update({ [sel.dataset.field]: val }).eq('id', id);
-    toast(error ? 'Could not update that registration.' : 'Updated.', !error);
+    const r = (regs || []).find(x => x.id === id);
+    const waiting = !error && sel.dataset.field === 'status' && val === 'approved' && r && !r.player_id && !ROSTER_READY.includes(r.payment_status);
+    toast(error ? 'Could not update that registration.' : waiting ? 'Approved. They join the roster once payment is complete.' : 'Updated.', !error);
     if (sel.dataset.field === 'status') refreshCounts();
   });
 

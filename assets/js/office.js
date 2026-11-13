@@ -19,6 +19,8 @@ const STATUS_CHIP = {
 };
 const PAY_CHIP = { paid: 'chip-ivy', comped: 'chip-ivy', plan: 'chip-brass', unpaid: 'chip-red', past_due: 'chip-red', refunded: 'chip-grey' };
 const PAY_LABEL = { unpaid: 'Unpaid', plan: 'On plan', past_due: 'Past due', paid: 'Paid', refunded: 'Refunded', comped: 'Comped' };
+/* Payment states that let an approved registration onto a roster (see supabase/stripe.sql). */
+const ROSTER_READY = ['paid', 'plan', 'comped'];
 const PAY_STATUSES = ['unpaid', 'plan', 'past_due', 'paid', 'refunded', 'comped'];
 const chip = (text, cls) => `<span class="chip ${cls}">${esc(text)}</span>`;
 const money = c => c == null ? '' : '$' + (c / 100).toLocaleString('en-CA', { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
@@ -463,7 +465,8 @@ async function playerView(key) {
         </section>` : `
         <section class="panel p-5" style="border-color:var(--brass)">
           <div class="rule mb-2">Not on a roster yet</div>
-          <p class="text-sm text-gray-600 mb-3">This is a registration (${esc(reg.status)}). Pick a team and approve it to put ${esc(reg.first_name)} on the roster.</p>
+          <p class="text-sm text-gray-600 mb-3">This is a registration (${esc(reg.status)}). Pick a team and approve it to put ${esc(reg.first_name)} on the roster.
+            ${ROSTER_READY.includes(reg.payment_status) ? '' : `<b class="text-red-800">They haven't paid yet,</b> so once approved they join the roster automatically when payment is complete (or mark them Comped below).`}</p>
           <div class="flex flex-wrap gap-2">
             <select id="rq-team" class="field !w-auto flex-1">${teamOpts(reg.team_id)}</select>
             <button id="rq-approve" class="btn btn-primary">Approve onto team</button>
@@ -480,7 +483,9 @@ async function playerView(key) {
             <dt>Emergency</dt><dd>${esc(reg.emergency_name ?? '—')} ${reg.emergency_phone ? '· ' + esc(reg.emergency_phone) : ''}</dd>
             <dt>Division asked</dt><dd>${esc(reg.division ?? '—')}</dd>
             <dt>Shirt size</dt><dd>${esc(reg.shirt_size ?? '—')}</dd>
-            <dt>Waiver</dt><dd>${reg.waiver_accepted ? 'Accepted' : '<span class="text-red-800 font-semibold">Not accepted</span>'}</dd>
+            <dt>Terms</dt><dd>${reg.terms_accepted_at
+              ? `Agreed ${fmtDay(reg.terms_accepted_at)} · <a class="underline" href="terms.html" target="_blank" rel="noopener">version ${esc(reg.terms_version ?? '?')}</a>`
+              : reg.waiver_accepted ? 'Accepted the waiver (before Terms and Conditions existed)' : '<span class="text-red-800 font-semibold">Not accepted</span>'}</dd>
             <dt>Registered</dt><dd>${fmtDay(reg.created_at)}</dd>
             ${reg.notes ? `<dt>Their note</dt><dd class="serif">${esc(reg.notes)}</dd>` : ''}
           </dl>
@@ -589,7 +594,8 @@ async function playerView(key) {
     $('rq-approve').onclick = () => {
       const t = $('rq-team').value;
       if (!t) return toast('Pick a team first.', false);
-      setReg({ team_id: t, status: 'approved' }, `${reg.first_name} is on the roster.`);
+      setReg({ team_id: t, status: 'approved' }, ROSTER_READY.includes(reg.payment_status)
+        ? `${reg.first_name} is on the roster.` : `Approved. ${reg.first_name} joins the roster once payment is complete.`);
     };
     $('rq-wait').onclick = () => setReg({ status: 'waitlist' }, 'Moved to the waitlist.');
   }

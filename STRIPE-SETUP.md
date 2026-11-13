@@ -72,6 +72,10 @@ For old plans to show "amount remaining", the old option in Payments needs **Num
 | Plan cancelled before the end | **Past due** (still owes the rest) |
 | Full refund | **Refunded** |
 
+**Roster:** an approved registration goes onto its team's roster only once payment is complete: paid in full, or the first plan payment. Approve someone before they've paid and they join the roster automatically when the payment comes in. Mark someone **Comped** to put them on without paying. Nobody already on a roster is removed.
+
+**Terms and Conditions:** players must tick the Terms and Conditions box (linked to `terms.html`) before they can continue to payment. Each registration records the date they agreed and the version. If you change the terms, update `TERMS_VERSION` in `assets/js/config.js`.
+
 You can still set a status by hand on a player's profile (cash, e-transfer). Stripe will never overwrite **Comped** or **Refunded**.
 
 ## If something doesn't work

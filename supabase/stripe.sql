@@ -37,6 +37,10 @@ alter table registrations add column if not exists stripe_subscription_id text;
 alter table registrations add column if not exists stripe_session_id      text;
 alter table registrations add column if not exists stripe_synced_at       timestamptz;
 
+-- Terms and Conditions (terms.html): which version they agreed to, and when.
+alter table registrations add column if not exists terms_version     text;
+alter table registrations add column if not exists terms_accepted_at timestamptz;
+
 -- 'plan' = on a payment plan and up to date, 'past_due' = a plan payment failed
 alter table registrations drop constraint if exists registrations_payment_status_check;
 alter table registrations add constraint registrations_payment_status_check
@@ -57,3 +61,27 @@ create policy "public submit" on registrations for insert with check (
   and payment_type is null and plan_status is null and paid_at is null
   and stripe_customer_id is null and stripe_subscription_id is null and stripe_session_id is null
 );
+
+-- ---------- roster only after payment ----------------------------
+-- An approved registration joins its team's roster only once payment
+-- is complete: paid in full, the first plan payment went through
+-- ('plan'), or comped by staff. If they're approved first and pay
+-- later, the payment update puts them on the roster automatically.
+-- Players already on a roster are never removed by this.
+create or replace function registration_to_roster() returns trigger
+language plpgsql security definer as $$
+declare new_player uuid;
+begin
+  if new.status = 'approved' and new.team_id is not null and new.player_id is null
+     and new.payment_status in ('paid','plan','comped') then
+    insert into players (team_id, first_name, last_name, jersey_number, position)
+    values (new.team_id, new.first_name, new.last_name, new.jersey_number, coalesce(new.position,'Forward'))
+    returning id into new_player;
+    new.player_id := new_player;
+  elsif new.player_id is not null then
+    update players set team_id = new.team_id, jersey_number = new.jersey_number,
+                       position = coalesce(new.position,'Forward')
+    where id = new.player_id;
+  end if;
+  return new;
+end $$;

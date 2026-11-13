@@ -100,8 +100,10 @@ async function checkout(req: Request) {
     }
     if (!row.first_name || !row.last_name || !row.email || !/^\S+@\S+\.\S+$/.test(String(row.email)))
       return json({ error: 'Fill in your name and a valid email.' }, 400);
-    if (r.waiver_accepted !== true) return json({ error: 'Please accept the waiver.' }, 400);
+    if (r.waiver_accepted !== true) return json({ error: 'Please agree to the Terms and Conditions.' }, 400);
     row.waiver_accepted = true;
+    row.terms_version = String(r.terms_version ?? '').slice(0, 32) || null;
+    row.terms_accepted_at = new Date().toISOString();   // server time, not the browser's
     row.jersey_number = row.jersey_number ? parseInt(String(row.jersey_number), 10) || null : null;
     if (row.team_id && !UUID.test(String(row.team_id))) row.team_id = null;
     if (!['Forward', 'Defence', 'Goalie'].includes(String(row.position))) row.position = 'Forward';

@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="assets/css/ivy.css?v=2026111401">
-<script src="assets/js/preload.js?v=2026111401"></script>
+<link rel="stylesheet" href="assets/css/ivy.css?v=2026111402">
+<script src="assets/js/preload.js?v=2026111402"></script>
 </head>
 <body>
 <header id="site-header"></header>
@@ -81,15 +81,16 @@
     <div><label class="label" for="notes">Anything we should know?</label>
       <textarea id="notes" name="notes" rows="3" class="field" placeholder="Playing with a friend, goalie gear, allergies…"></textarea></div>
 
-    <label class="flex gap-3 items-start text-sm text-[#33463C]">
-      <input type="checkbox" id="waiver" required class="mt-1">
-      <span>I have read and accept the league waiver and code of conduct, and I confirm I am 18 or older.</span>
-    </label>
-
     <div id="pay-choice" class="hidden grid gap-3">
       <div class="rule mt-2">How you'll pay</div>
       <div id="pay-options" class="grid gap-3" role="radiogroup" aria-label="Payment option"></div>
     </div>
+
+    <label class="panel p-4 flex gap-3 items-start text-sm text-[#33463C]" style="background:var(--ice)">
+      <input type="checkbox" id="waiver" required class="mt-1" style="accent-color:var(--ivy)">
+      <span>I have read and agree to the <a href="terms.html" target="_blank" rel="noopener" class="underline font-semibold" style="color:var(--ivy)">Terms and Conditions</a>,
+        including the assumption of risk, release of liability and refund policy, and I confirm I am 18 or older.</span>
+    </label>
 
     <div class="flex flex-wrap items-center gap-4 pt-2 border-t" style="border-color:var(--line)">
       <button class="btn btn-primary" id="submit-btn">Save my details</button>
@@ -108,9 +109,9 @@
 <footer id="site-footer"></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js?v=2026111401"></script>
-<script src="assets/js/app.js?v=2026111401"></script>
-<script src="assets/js/conrad.js?v=2026111401"></script>
+<script src="assets/js/config.js?v=2026111402"></script>
+<script src="assets/js/app.js?v=2026111402"></script>
+<script src="assets/js/conrad.js?v=2026111402"></script>
 <script>
 document.addEventListener('ivy:ready', async () => {
   const { esc } = window.Ivy;
@@ -250,6 +251,8 @@ document.addEventListener('ivy:ready', async () => {
       row.jersey_number = row.jersey_number ? parseInt(row.jersey_number, 10) : null;
       row.team_id = row.team_id || null;
       row.waiver_accepted = $('waiver').checked;
+      row.terms_version = CFG.TERMS_VERSION;
+      row.terms_accepted_at = new Date().toISOString();
 
       if (inForm) {
         const err = await goToStripe({ registration: row, option_id: optionId });
@@ -261,7 +264,11 @@ document.addEventListener('ivy:ready', async () => {
         return;
       }
 
-      const { error } = await sb.from('registrations').insert(row);
+      let { error } = await sb.from('registrations').insert(row);
+      if (error && /terms_/.test(error.message || '')) {   // database not updated yet (supabase/stripe.sql)
+        delete row.terms_version; delete row.terms_accepted_at;
+        ({ error } = await sb.from('registrations').insert(row));
+      }
       msg.classList.remove('hidden');
 
       if (error) {

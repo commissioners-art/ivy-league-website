@@ -13,6 +13,10 @@ window.IVY_CONFIG = {
   TAGLINE: 'Where pucks meet pints in Milton',
   VENUE: 'Milton Sports Centre',
   CONTACT_EMAIL: 'info@miltonivyleague.ca',
+
+  // Version of terms.html players agree to when they register. Change this
+  // whenever the terms change, so each registration records which ones it accepted.
+  TERMS_VERSION: '2026-11-13',
   TIMEZONE: 'America/Toronto',
 
   // Live game time is estimated from the scheduled start (no clock to run).
