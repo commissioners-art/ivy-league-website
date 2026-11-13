@@ -302,3 +302,10 @@ body {
   position: absolute; top: .75rem; right: 1rem; color: #fff; font-size: 2.25rem; line-height: 1;
   width: 2.75rem; height: 2.75rem;
 }
+
+/* Registration: payment option cards (radio inside) */
+.pay-opt { transition: border-color .15s, box-shadow .15s; }
+.pay-opt:has(input:checked) { border-color: var(--ivy); box-shadow: 0 0 0 2px var(--ivy) inset; }
+.pay-opt input { accent-color: var(--ivy); }
+html.hud .pay-opt:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+html.hud .pay-opt input { accent-color: var(--accent); }

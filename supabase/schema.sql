@@ -276,6 +276,10 @@ create policy "admin delete regs" on registrations for delete using (is_admin())
 -- ---------- APs (call-ups) --------------------------------------
 -- Defined in supabase/ap.sql (run that file after this one).
 
+-- ---------- Stripe payments in registration -----------------------
+-- Defined in supabase/stripe.sql (run that file after this one).
+-- Setup steps: STRIPE-SETUP.md.
+
 -- ---------- realtime ---------------------------------------------
 alter publication supabase_realtime add table games;
 alter publication supabase_realtime add table game_events;
