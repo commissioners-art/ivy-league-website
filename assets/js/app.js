@@ -86,10 +86,8 @@ function applyTheme(map) {
   Object.entries(VARS).forEach(([key, cssVar]) => {
     if (map[key]) document.documentElement.style.setProperty(cssVar, map[key]);
   });
-  /* Site-wide HUD switch; a ?theme= preview in this browser wins. */
-  let pick = null;
-  try { pick = localStorage.getItem('ivy.theme'); } catch (e) {}
-  if (!pick) document.documentElement.classList.toggle('hud', map['theme.style'] === 'hud');
+  /* Dark theme is on unless an admin sets theme.style to classic. */
+  document.documentElement.classList.toggle('hud', map['theme.style'] !== 'classic');
 }
 
 /* ---------- section photo galleries ------------------------------

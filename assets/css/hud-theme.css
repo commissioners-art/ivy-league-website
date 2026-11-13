@@ -114,3 +114,24 @@ html.hud .border,
 html.hud .border-t,
 html.hud .border-b { border-color: var(--line); }
 html.hud .underline { text-decoration-color: rgba(111,207,154,.4); }
+
+/* ---- League office (admin/) ---------------------------------- */
+html.hud .office-side { border-right: 1px solid var(--line); }
+html.hud .office-search { background: rgba(228,238,232,.06); border-color: rgba(228,238,232,.14); border-radius: 6px; }
+html.hud .office-search:focus { border-color: var(--accent); background: rgba(228,238,232,.09); }
+html.hud .office-nav button { border-radius: 6px; }
+html.hud .office-nav button.on { background: rgba(228,238,232,.08); box-shadow: inset 3px 0 0 var(--accent); }
+html.hud .office-me { border-top-color: var(--line); }
+html.hud .stat { background: var(--hud-panel); border-color: var(--line); border-radius: 8px; }
+html.hud button.stat:hover { border-color: rgba(111,207,154,.3); }
+html.hud .stat .n { color: #F4F8F5; }
+html.hud .stat .l, html.hud .kv dt { color: var(--hud-muted); }
+html.hud .stat.warn .n { color: var(--brass-soft); }
+html.hud .stat.bad .n { color: #FF8A78; }
+html.hud .chip-ivy   { background: rgba(111,207,154,.14); color: var(--accent); }
+html.hud .chip-brass { background: rgba(192,138,43,.18);  color: var(--brass-soft); }
+html.hud .chip-red   { background: rgba(255,138,120,.14); color: #FF8A78; }
+html.hud .chip-grey  { background: rgba(228,238,232,.08); color: var(--hud-soft); }
+html.hud .text-red-800 { color: #FF8A78; }
+html.hud textarea.field, html.hud input[type="date"].field, html.hud input[type="datetime-local"].field, html.hud input[type="time"].field { color-scheme: dark; }
+html.hud .field.\!text-black { color: #fff !important; }
