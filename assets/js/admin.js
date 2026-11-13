@@ -1344,10 +1344,13 @@ async function payViewInner() {
           <input class="field" data-lf="installments" type="number" min="1" value="${l.installments ?? ''}" placeholder="Number of payments (plans only)">
           <input class="field md:col-span-2" data-lf="url" value="${esc(l.url ?? '')}" placeholder="Stripe link (only used without a price ID)">
           <input class="field md:col-span-2" data-lf="description" value="${esc(l.description ?? '')}">
+          <p class="md:col-span-2 text-xs" data-stripe-state="${l.id}"></p>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" data-lf="active" ${l.active ? 'checked' : ''}> Active on the site</label>
           <div class="text-right"><button data-dell="${l.id}" class="text-xs text-red-700 hover:underline">Delete option</button></div>
         </div>`).join('') || '<p class="text-sm text-gray-500">No payment links yet.</p>'}
     </div>`);
+
+  checkOptionsWithStripe();
 
   document.getElementById('save-override').onclick = async () => {
     const { error } = await sb.from('site_content')
@@ -1387,6 +1390,7 @@ async function payViewInner() {
     if (f.dataset.lf === 'stripe_price_id' && val && !val.startsWith('price_')) return toast('A Stripe price ID starts with price_ (not prod_).', false);
     const { error } = await sb.from('payment_links').update({ [f.dataset.lf]: val }).eq('id', id);
     toast(error ? 'Not saved.' : 'Saved.', !error);
+    if (!error) checkOptionsWithStripe();
   });
 
   document.getElementById('view').addEventListener('click', async e => {
@@ -1394,6 +1398,36 @@ async function payViewInner() {
     if (!confirm('Delete this payment option?')) return;
     await sb.from('payment_links').delete().eq('id', b.dataset.dell);
     payView();
+  });
+}
+
+/* Ask Stripe whether each option is still live. The registration page only
+   shows options that are ticked Active here AND active in Stripe, so this
+   explains why an option is (or isn't) showing. */
+async function checkOptionsWithStripe() {
+  const cells = document.querySelectorAll('[data-stripe-state]');
+  if (!cells.length) return;
+  cells.forEach(c => { c.textContent = 'Checking with Stripe…'; c.style.color = '#6B7280'; });
+  let out = null;
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch(`${IVY_CONFIG.SUPABASE_URL}/functions/v1/stripe/options`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: IVY_CONFIG.SUPABASE_ANON_KEY, Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ all: true })
+    });
+    if (res.ok) out = await res.json();
+  } catch { /* function not set up yet */ }
+  const by = new Map((out?.options || []).map(o => [o.id, o]));
+  cells.forEach(c => {
+    const o = by.get(c.dataset.stripeState);
+    if (!out) { c.textContent = 'Couldn’t check with Stripe (the Stripe function isn’t set up yet, see STRIPE-SETUP.md).'; return; }
+    if (!o) return;
+    const shown = o.active && o.stripe_ok;
+    c.style.color = shown ? 'var(--ivy)' : '#B3261E';
+    c.textContent = shown ? '● Showing on the registration page: active here and in Stripe.'
+      : !o.active ? `○ Hidden: "Active on the site" is off.${o.stripe_ok ? '' : ' ' + o.stripe_reason}`
+      : `○ Hidden from the site: ${o.stripe_reason}`;
   });
 }
 

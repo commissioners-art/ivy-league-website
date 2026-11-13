@@ -7,6 +7,12 @@
 //   POST /functions/v1/stripe/webhook    Stripe calls this whenever a
 //        payment goes through, fails, or a plan changes. It keeps each
 //        registration's payment columns up to date.
+//   POST /functions/v1/stripe/options    the registration page calls this to
+//        get the payment options to show. Only options that are switched on
+//        in the office AND still active in Stripe come back, so an archived
+//        price or a deactivated payment link never reaches the site. With
+//        {"all": true} and an admin login, returns every option and why any
+//        are hidden (for the Payments tab).
 //   POST /functions/v1/stripe/sync       "Sync with Stripe" in the league
 //        office (admins only). Looks back through Stripe for the past
 //        year and matches every payment and plan to a registration,
@@ -48,6 +54,7 @@ Deno.serve(async req => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
   const route = new URL(req.url).pathname.split('/').filter(Boolean).pop();
   try {
+    if (route === 'options') return await options(req);
     if (route === 'checkout') return await checkout(req);
     if (route === 'webhook') return await webhook(req);
     if (route === 'sync') return await sync(req);
@@ -72,7 +79,9 @@ async function checkout(req: Request) {
 
   const { data: option } = await db.from('payment_links').select('*').eq('id', optionId).eq('active', true).maybeSingle();
   if (!option?.stripe_price_id) return json({ error: 'That payment option is not available any more.' }, 400);
-  const price = await stripe.prices.retrieve(option.stripe_price_id);
+  const check = await stripeCheck(option);
+  if (!check.ok) return json({ error: 'That payment option is not available any more. Refresh the page and pick another.' }, 409);
+  const price = check.price!;
   const isPlan = !!price.recurring;
 
   // A player coming back after closing the Stripe page reuses their registration.
@@ -127,6 +136,63 @@ async function checkout(req: Request) {
 }
 
 // =================================================================
+// Options: only what's switched on here AND still live in Stripe
+// =================================================================
+type Check = { ok: boolean; reason?: string; price?: Stripe.Price };
+let liveLinks: { at: number; urls: Set<string> } | null = null;
+
+/* Is this option still usable in Stripe? A price must be active and its
+   product not archived; a plain link must be an active Stripe payment link. */
+async function stripeCheck(o: any): Promise<Check> {
+  if (o.stripe_price_id) {
+    let price: Stripe.Price;
+    try { price = await stripe.prices.retrieve(o.stripe_price_id, { expand: ['product'] }); }
+    catch { return { ok: false, reason: 'Stripe has no price with this ID (check test vs live mode).' }; }
+    if (!price.active) return { ok: false, reason: 'This price is archived in Stripe.' };
+    const product = price.product as Stripe.Product | Stripe.DeletedProduct;
+    if (!product || (product as Stripe.DeletedProduct).deleted || !(product as Stripe.Product).active)
+      return { ok: false, reason: 'The product for this price is archived in Stripe.' };
+    return { ok: true, price };
+  }
+  if (o.url) {
+    if (!liveLinks || Date.now() - liveLinks.at > 60_000) {
+      const urls = new Set<string>();
+      for await (const pl of stripe.paymentLinks.list({ active: true, limit: 100 })) urls.add(pl.url.replace(/\/$/, ''));
+      liveLinks = { at: Date.now(), urls };
+    }
+    return liveLinks.urls.has(String(o.url).trim().replace(/\/$/, ''))
+      ? { ok: true } : { ok: false, reason: 'This link is deactivated in Stripe, or is not a payment link from this Stripe account.' };
+  }
+  return { ok: false, reason: 'No Stripe price ID or link.' };
+}
+
+async function options(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const all = body.all === true;
+  if (all && !(await callerIsAdmin(req))) return json({ error: 'Admins only.' }, 403);
+  let q = db.from('payment_links').select('*').order('sort');
+  if (!all) q = q.eq('active', true);
+  const { data: rows, error } = await q;
+  if (error) throw error;
+  const checked = await Promise.all((rows ?? []).map(async o => {
+    const c = await stripeCheck(o);
+    return { ...o, stripe_ok: c.ok, stripe_reason: c.reason ?? null };
+  }));
+  if (all) return json({ options: checked });
+  const pub = ({ id, label, description, price_text, url, stripe_price_id, installments, sort }: any) =>
+    ({ id, label, description, price_text, url: stripe_price_id ? null : url, stripe_price_id, installments, sort });
+  return json({ options: checked.filter(o => o.stripe_ok).map(pub) });
+}
+
+async function callerIsAdmin(req: Request) {
+  const asUser = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
+    global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } }, auth: { persistSession: false }
+  });
+  const { data } = await asUser.rpc('is_admin');
+  return !!data;
+}
+
+// =================================================================
 // Webhook: Stripe tells us what happened
 // =================================================================
 async function webhook(req: Request) {
@@ -170,11 +236,7 @@ async function webhook(req: Request) {
 // Sync: look back through Stripe and fill in everyone
 // =================================================================
 async function sync(req: Request) {
-  const asUser = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
-    global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } }, auth: { persistSession: false }
-  });
-  const { data: isAdmin } = await asUser.rpc('is_admin');
-  if (!isAdmin) return json({ error: 'Admins only.' }, 403);
+  if (!(await callerIsAdmin(req))) return json({ error: 'Admins only.' }, 403);
 
   const body = await req.json().catch(() => ({}));
   const days = Math.min(Math.max(parseInt(body.days, 10) || 365, 1), 730);

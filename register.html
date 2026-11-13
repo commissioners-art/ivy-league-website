@@ -118,9 +118,26 @@ document.addEventListener('ivy:ready', async () => {
   const params = new URLSearchParams(location.search);
   const $ = id => document.getElementById(id);
 
-  const [{ data: ov }, { data: links }] = await Promise.all([
+  /* Payment options come from the Stripe function, which only returns
+     options that are switched on in the office AND still active in Stripe
+     (no archived prices, no deactivated links). Only if that function
+     hasn't been set up in Supabase yet do we fall back to the office list. */
+  async function loadOptions() {
+    try {
+      const res = await fetch(`${CFG.SUPABASE_URL}/functions/v1/stripe/options`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: CFG.SUPABASE_ANON_KEY, Authorization: `Bearer ${CFG.SUPABASE_ANON_KEY}` },
+        body: '{}'
+      });
+      if (res.ok) return (await res.json()).options || [];
+      if (res.status !== 404) return [];   // set up but failing: show nothing rather than a stale link
+    } catch { /* not set up yet (no CORS on Supabase's "not found"): fall through */ }
+    const { data } = await sb.from('payment_links').select('*').eq('active', true).order('sort');
+    return (data || []).filter(l => !l.stripe_price_id);   // checkout can't work without the function
+  }
+  const [{ data: ov }, links] = await Promise.all([
     sb.from('site_content').select('value').eq('key', 'register.override').maybeSingle(),
-    sb.from('payment_links').select('*').eq('active', true).order('sort')
+    loadOptions()
   ]);
   const override = ov?.value?.trim();
   /* Options with a Stripe price are paid inside the form (Stripe Checkout).
@@ -275,7 +292,8 @@ document.addEventListener('ivy:ready', async () => {
       ? `<div class="panel p-5"><p class="serif text-sm text-[#33463C]">Payment happens on Stripe's secure checkout page, right after the form.
           We never see your card number. Payment plans charge the same card automatically on each due date.</p>
           <p class="text-xs text-gray-500 mt-3">Questions? <a class="underline" href="mailto:${esc(CFG.CONTACT_EMAIL)}">${esc(CFG.CONTACT_EMAIL)}</a></p></div>`
-      : `<div class="panel p-5"><p class="text-sm text-gray-600">Payment links go live when registration opens. Save your details and we will email you.</p></div>`;
+      : `<div class="panel p-5"><p class="text-sm text-gray-600">Payment opens when registration does. Save your details and we will email you, or write to
+          <a class="underline" href="mailto:${esc(CFG.CONTACT_EMAIL)}">${esc(CFG.CONTACT_EMAIL)}</a>.</p></div>`;
 });
 </script>
 </body>

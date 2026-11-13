@@ -48,6 +48,12 @@ Never paste the secret key into the site, the office, GitHub, or a chat.
 
 You can leave the old Stripe link in an option; it's ignored once a price ID is set.
 
+### Only current prices and links ever show
+
+The registration page asks Stripe before showing anything. An option appears only if it is ticked **Active on the site** in the office *and* it is still live in Stripe: the price isn't archived, its product isn't archived, or (for a plain link) the payment link is still active. Checkout checks again at the moment someone pays. So to retire last season's price, archiving it in Stripe is enough, even if you forget to untick it here. Each option in the Payments tab says whether it is showing, and why not if it's hidden.
+
+There are no Stripe links written into the website's code; everything comes from the Payments tab.
+
 ## 6. Catch up on people who already paid
 
 League office → **People** → **Sync with Stripe**. It looks through the last year of Stripe payments and plans and fills in every registration it can match by email, including people who paid through the old Stripe links. Anyone it can't match is listed at the top (usually they paid with a different email than they registered with: fix the email on their registration, then sync again).
