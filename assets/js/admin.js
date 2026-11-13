@@ -675,7 +675,7 @@ async function regsView() {
             <td>${esc(r.division ?? '')}</td>
             <td><select class="field !py-1 !text-xs" data-field="team_id">${teamOpts(r)}</select></td>
             <td><select class="field !py-1 !text-xs" data-field="payment_status">
-              ${['unpaid', 'paid', 'refunded', 'comped'].map(s => `<option ${s === r.payment_status ? 'selected' : ''}>${s}</option>`).join('')}
+              ${PAY_STATUSES.map(s => `<option value="${s}" ${s === r.payment_status ? 'selected' : ''}>${PAY_LABEL[s]}${s === r.payment_status && r.payment_type === 'plan' && r.installments_total ? ` ${r.installments_paid ?? 0}/${r.installments_total}` : ''}</option>`).join('')}
             </select></td>
             <td><select class="field !py-1 !text-xs" data-field="status">
               ${['new', 'approved', 'waitlist', 'declined'].map(s => `<option ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}
@@ -718,7 +718,7 @@ async function regsView() {
   });
 
   document.getElementById('export').onclick = () => {
-    const cols = ['created_at', 'first_name', 'last_name', 'email', 'phone', 'position', 'jersey_number', 'shirt_size', 'division', 'emergency_name', 'emergency_phone', 'payment_status', 'status', 'notes'];
+    const cols = ['created_at', 'first_name', 'last_name', 'email', 'phone', 'position', 'jersey_number', 'shirt_size', 'division', 'emergency_name', 'emergency_phone', 'payment_status', 'payment_type', 'plan_status', 'installments_paid', 'installments_total', 'amount_paid_cents', 'amount_total_cents', 'next_payment_at', 'status', 'notes'];
     const csv = [cols.join(',')].concat((regs || []).map(r =>
       cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(','))).join('\n');
     const a = document.createElement('a');
@@ -1302,12 +1302,15 @@ async function payViewInner() {
 
   mount(`
     <div class="flex flex-wrap items-center justify-between gap-3 mb-1">
-      <h2 class="display text-2xl">Payment links</h2>
+      <h2 class="display text-2xl">Payment options</h2>
       <button id="set-pin" class="btn btn-quiet !text-xs !py-2">Set / change PIN</button>
     </div>
-    <p class="text-sm text-gray-600 mb-5 max-w-2xl">Create the link in Stripe, paste it here, and it appears on the registration page.
-      Add as many links as you need — one per division, per season, or per fee type — using "Add a link" below.
-      Untick "Active" to retire a link without deleting it.</p>
+    <p class="text-sm text-gray-600 mb-3 max-w-2xl">Each option shows on the registration page. Give it a <b>Stripe price ID</b>
+      (<code>price_…</code>, from the product in Stripe) and players pick it inside the registration form and pay straight away:
+      a one-time price is a full payment, a monthly price is a payment plan. Payments then show up in the office by themselves.</p>
+    <p class="text-sm text-gray-600 mb-5 max-w-2xl">For a plan, set <b>Number of payments</b> and the plan stops itself after the last one
+      (leave it blank to keep charging until cancelled). An option with only a Stripe link and no price ID still shows as a separate
+      "Pay with Stripe" button, like before. Untick "Active" to retire an option without deleting it.</p>
 
     <div class="panel p-5 mb-6 max-w-3xl" style="border-color:var(--brass)">
       <div class="rule mb-3">Registration page override</div>
@@ -1320,14 +1323,16 @@ async function payViewInner() {
     </div>
 
     <div class="panel p-5 mb-6 max-w-3xl">
-      <div class="rule mb-3">Add a link</div>
+      <div class="rule mb-3">Add an option</div>
       <div class="grid md:grid-cols-2 gap-3">
         <input id="p-label" class="field" placeholder="Label — e.g. Lager Division, full season">
         <input id="p-price" class="field" placeholder="Price text — e.g. $425 + HST">
-        <input id="p-url" class="field md:col-span-2" placeholder="https://buy.stripe.com/...">
-        <input id="p-desc" class="field md:col-span-2" placeholder="Short description (optional)">
+        <input id="p-stripe" class="field" placeholder="Stripe price ID — price_...">
+        <input id="p-inst" class="field" type="number" min="1" placeholder="Number of payments (plans only)">
+        <input id="p-url" class="field md:col-span-2" placeholder="Or a Stripe link instead — https://buy.stripe.com/...">
+        <input id="p-desc" class="field md:col-span-2" placeholder="Short description (optional) — e.g. 4 monthly payments of $110">
       </div>
-      <button id="add-link" class="btn btn-primary mt-3">Add link</button>
+      <button id="add-link" class="btn btn-primary mt-3">Add option</button>
     </div>
 
     <div class="grid gap-3 max-w-3xl">
@@ -1335,10 +1340,12 @@ async function payViewInner() {
         <div class="panel p-4 grid md:grid-cols-2 gap-3" data-link="${l.id}">
           <input class="field" data-lf="label" value="${esc(l.label)}">
           <input class="field" data-lf="price_text" value="${esc(l.price_text ?? '')}">
-          <input class="field md:col-span-2" data-lf="url" value="${esc(l.url)}">
+          <input class="field" data-lf="stripe_price_id" value="${esc(l.stripe_price_id ?? '')}" placeholder="Stripe price ID — price_...">
+          <input class="field" data-lf="installments" type="number" min="1" value="${l.installments ?? ''}" placeholder="Number of payments (plans only)">
+          <input class="field md:col-span-2" data-lf="url" value="${esc(l.url ?? '')}" placeholder="Stripe link (only used without a price ID)">
           <input class="field md:col-span-2" data-lf="description" value="${esc(l.description ?? '')}">
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" data-lf="active" ${l.active ? 'checked' : ''}> Active on the site</label>
-          <div class="text-right"><button data-dell="${l.id}" class="text-xs text-red-700 hover:underline">Delete link</button></div>
+          <div class="text-right"><button data-dell="${l.id}" class="text-xs text-red-700 hover:underline">Delete option</button></div>
         </div>`).join('') || '<p class="text-sm text-gray-500">No payment links yet.</p>'}
     </div>`);
 
@@ -1357,26 +1364,34 @@ async function payViewInner() {
 
   document.getElementById('add-link').onclick = async () => {
     const url = document.getElementById('p-url').value.trim();
-    if (!url.startsWith('http')) return toast('Paste the full Stripe URL.', false);
-    await sb.from('payment_links').insert({
+    const priceId = document.getElementById('p-stripe').value.trim();
+    const inst = parseInt(document.getElementById('p-inst').value, 10);
+    if (priceId && !priceId.startsWith('price_')) return toast('A Stripe price ID starts with price_ (not prod_).', false);
+    if (!priceId && !url.startsWith('http')) return toast('Add a Stripe price ID, or paste the full Stripe link.', false);
+    const { error } = await sb.from('payment_links').insert({
       label: document.getElementById('p-label').value || 'Registration',
       price_text: document.getElementById('p-price').value,
-      description: document.getElementById('p-desc').value, url
+      description: document.getElementById('p-desc').value, url: url || null,
+      stripe_price_id: priceId || null, installments: inst > 0 ? inst : null
     });
+    if (error) return toast(/column|schema cache/i.test(error.message) ? 'Run supabase/stripe.sql in Supabase first.' : 'Could not add that option.', false);
     payView();
   };
 
   document.getElementById('view').addEventListener('change', async e => {
     const f = e.target.closest('[data-lf]'); if (!f) return;
     const id = f.closest('[data-link]').dataset.link;
-    const val = f.type === 'checkbox' ? f.checked : f.value;
+    let val = f.type === 'checkbox' ? f.checked : f.value.trim();
+    if (f.dataset.lf === 'installments') val = parseInt(val, 10) > 0 ? parseInt(val, 10) : null;
+    if (f.dataset.lf === 'stripe_price_id' || f.dataset.lf === 'url') val = val || null;
+    if (f.dataset.lf === 'stripe_price_id' && val && !val.startsWith('price_')) return toast('A Stripe price ID starts with price_ (not prod_).', false);
     const { error } = await sb.from('payment_links').update({ [f.dataset.lf]: val }).eq('id', id);
     toast(error ? 'Not saved.' : 'Saved.', !error);
   });
 
   document.getElementById('view').addEventListener('click', async e => {
     const b = e.target.closest('[data-dell]'); if (!b) return;
-    if (!confirm('Delete this payment link?')) return;
+    if (!confirm('Delete this payment option?')) return;
     await sb.from('payment_links').delete().eq('id', b.dataset.dell);
     payView();
   });

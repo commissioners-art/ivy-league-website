@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="assets/css/ivy.css?v=2026111301">
-<script src="assets/js/preload.js?v=2026111301"></script>
+<link rel="stylesheet" href="assets/css/ivy.css?v=2026111401">
+<script src="assets/js/preload.js?v=2026111401"></script>
 </head>
 <body>
 <header id="site-header"></header>
@@ -28,11 +28,11 @@
     </div>
     <div class="flex items-start gap-4">
       <span class="display text-2xl w-8 shrink-0" style="color:var(--brass-soft)">2</span>
-      <p class="serif text-sm text-white/80 pt-1">Fill in the form, then pay through the secure Stripe link.</p>
+      <p class="serif text-sm text-white/80 pt-1" id="step2">Fill in the form, then pay through the secure Stripe link.</p>
     </div>
     <div class="flex items-start gap-4">
       <span class="display text-2xl w-8 shrink-0" style="color:var(--brass-soft)">3</span>
-      <p class="serif text-sm text-white/80 pt-1">You'll get a confirmation email, and your name appears on the <a href="teams.html" class="underline">roster</a> once payment clears.</p>
+      <p class="serif text-sm text-white/80 pt-1" id="step3">You'll get a confirmation email, and your name appears on the <a href="teams.html" class="underline">roster</a> once payment clears.</p>
     </div>
   </div>
 </section>
@@ -86,9 +86,14 @@
       <span>I have read and accept the league waiver and code of conduct, and I confirm I am 18 or older.</span>
     </label>
 
+    <div id="pay-choice" class="hidden grid gap-3">
+      <div class="rule mt-2">How you'll pay</div>
+      <div id="pay-options" class="grid gap-3" role="radiogroup" aria-label="Payment option"></div>
+    </div>
+
     <div class="flex flex-wrap items-center gap-4 pt-2 border-t" style="border-color:var(--line)">
       <button class="btn btn-primary" id="submit-btn">Save my details</button>
-      <p class="text-xs text-gray-500">Payment comes next — nothing is charged on this page.</p>
+      <p class="text-xs text-gray-500" id="submit-hint">Payment comes next — nothing is charged on this page.</p>
     </div>
     <p id="form-msg" class="text-sm hidden"></p>
   </form>
@@ -103,61 +108,149 @@
 <footer id="site-footer"></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js?v=2026111301"></script>
-<script src="assets/js/app.js?v=2026111301"></script>
-<script src="assets/js/conrad.js?v=2026111301"></script>
+<script src="assets/js/config.js?v=2026111401"></script>
+<script src="assets/js/app.js?v=2026111401"></script>
+<script src="assets/js/conrad.js?v=2026111401"></script>
 <script>
 document.addEventListener('ivy:ready', async () => {
   const { esc } = window.Ivy;
+  const CFG = window.IVY_CONFIG;
+  const params = new URLSearchParams(location.search);
+  const $ = id => document.getElementById(id);
 
-  /* One-off event mode: if an admin has filled in an override in the
-     Payments tab, show that instead of the normal hockey sign-up form. */
-  const { data: ov } = await sb.from('site_content').select('value').eq('key', 'register.override').maybeSingle();
+  const [{ data: ov }, { data: links }] = await Promise.all([
+    sb.from('site_content').select('value').eq('key', 'register.override').maybeSingle(),
+    sb.from('payment_links').select('*').eq('active', true).order('sort')
+  ]);
   const override = ov?.value?.trim();
+  /* Options with a Stripe price are paid inside the form (Stripe Checkout).
+     Options with only a link still show as a "Pay with Stripe" button. */
+  const checkoutOpts = (links || []).filter(l => l.stripe_price_id);
+  const linkOpts = (links || []).filter(l => !l.stripe_price_id && l.url);
 
-  if (override) {
-    document.getElementById('steps').remove();
+  const optionCards = opts => opts.map((l, i) => `
+    <label class="panel p-4 flex gap-3 items-start cursor-pointer pay-opt">
+      <input type="radio" name="option_id" value="${l.id}" class="mt-1.5" required ${opts.length === 1 || i === 0 ? 'checked' : ''}>
+      <span class="flex-1">
+        <span class="flex flex-wrap items-baseline justify-between gap-2">
+          <span class="display text-lg">${esc(l.label)}</span>
+          ${l.price_text ? `<span class="scoreline text-xl" style="color:var(--ivy)">${esc(l.price_text)}</span>` : ''}
+        </span>
+        ${l.description ? `<span class="block serif text-sm text-[#33463C] mt-1">${esc(l.description)}</span>` : ''}
+      </span>
+    </label>`).join('');
+
+  /* Send a registration to Stripe. Returns an error message, or redirects. */
+  async function goToStripe(payload) {
+    try {
+      const res = await fetch(`${CFG.SUPABASE_URL}/functions/v1/stripe/checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: CFG.SUPABASE_ANON_KEY, Authorization: `Bearer ${CFG.SUPABASE_ANON_KEY}` },
+        body: JSON.stringify(payload)
+      });
+      const out = await res.json().catch(() => ({}));
+      if (out.registration_id) { try { sessionStorage.setItem('ivy-reg', out.registration_id); } catch {} }
+      if (res.ok && out.url) { location.href = out.url; return null; }
+      return out.error || 'Payment could not start.';
+    } catch { return 'Payment could not start. Check your connection.'; }
+  }
+
+  const panel = html => { $('reg-form').outerHTML = `<div id="reg-form" class="panel p-6 md:p-8">${html}</div>`; };
+
+  /* ---------- coming back from Stripe ---------- */
+  const regId = params.get('reg');
+  if (params.get('paid') && regId) {
+    $('steps').remove();
+    panel(`
+      <div class="rule mb-4">You're registered</div>
+      <p class="display text-2xl mb-2">Thanks, you're all set.</p>
+      <p class="serif text-[#33463C]">Your payment went through and Stripe has emailed you a receipt. If you chose a payment plan,
+        the next payments come out automatically on the same card. We'll be in touch with your team placement, and your name
+        appears on the <a href="teams.html" class="underline">roster</a> once you're placed.</p>
+      <p class="text-sm text-gray-600 mt-4">Questions? Email <a class="underline" href="mailto:${esc(CFG.CONTACT_EMAIL)}">${esc(CFG.CONTACT_EMAIL)}</a>.</p>`);
+    try { sessionStorage.removeItem('ivy-reg'); } catch {}
+  } else if (params.get('unfinished') && regId && checkoutOpts.length) {
+    $('steps').remove();
+    panel(`
+      <div class="rule mb-4">Payment not finished</div>
+      <p class="serif text-[#33463C] mb-5">Your details are saved, but the payment wasn't completed, so your spot isn't held yet.
+        Pick how you'd like to pay and finish on Stripe's secure page.</p>
+      <form id="resume" class="grid gap-3">
+        ${optionCards(checkoutOpts)}
+        <div class="flex flex-wrap items-center gap-4 pt-2"><button class="btn btn-primary" id="resume-btn">Pay now</button></div>
+        <p id="resume-msg" class="text-sm text-red-700 hidden"></p>
+      </form>`);
+    $('resume').addEventListener('submit', async e => {
+      e.preventDefault();
+      const btn = $('resume-btn'); btn.disabled = true; btn.textContent = 'Opening Stripe…';
+      const err = await goToStripe({ registration_id: regId, option_id: new FormData(e.target).get('option_id') });
+      if (err) { const m = $('resume-msg'); m.textContent = err; m.classList.remove('hidden'); btn.disabled = false; btn.textContent = 'Pay now'; }
+    });
+  } else if (override) {
+    /* One-off event mode: if an admin has filled in an override in the
+       Payments tab, show that instead of the normal hockey sign-up form. */
+    $('steps').remove();
     const paragraphs = override.split(/\n\s*\n/).filter(t => t.trim())
       .map(t => `<p class="mb-4">${esc(t).replace(/\n/g, '<br>')}</p>`).join('');
-    document.getElementById('reg-form').outerHTML =
-      `<div class="panel p-6 md:p-8 serif text-lg leading-relaxed">${paragraphs}</div>`;
+    $('reg-form').outerHTML = `<div class="panel p-6 md:p-8 serif text-lg leading-relaxed">${paragraphs}</div>`;
   } else {
     /* Divisions and teams straight from the database. */
     const { data: teams } = await sb.from('teams').select('id,name,division,roster_cap').order('name');
     const divisions = [...new Set((teams || []).map(t => t.division))];
-    document.getElementById('division').insertAdjacentHTML('beforeend',
-      divisions.map(d => `<option>${esc(d)}</option>`).join(''));
+    $('division').insertAdjacentHTML('beforeend', divisions.map(d => `<option>${esc(d)}</option>`).join(''));
 
-    const teamSel = document.getElementById('team_id');
+    const teamSel = $('team_id');
     function fillTeams() {
-      const d = document.getElementById('division').value;
+      const d = $('division').value;
       const list = (teams || []).filter(t => !d || t.division === d);
       teamSel.innerHTML = `<option value="">Place me wherever there's room</option>` +
         list.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
     }
-    document.getElementById('division').addEventListener('change', fillTeams);
+    $('division').addEventListener('change', fillTeams);
     fillTeams();
 
+    const inForm = checkoutOpts.length > 0;
+    if (inForm) {
+      $('pay-options').innerHTML = optionCards(checkoutOpts);
+      $('pay-choice').classList.remove('hidden');
+      $('submit-btn').textContent = 'Continue to payment';
+      $('submit-hint').textContent = "You'll pay on Stripe's secure page next, then come straight back here.";
+      $('step2').textContent = 'Fill in the form and choose how to pay: all at once, or a payment plan.';
+      $('step3').innerHTML = "Pay on Stripe's secure page. You'll get a receipt by email, and your name appears on the <a href=\"teams.html\" class=\"underline\">roster</a> once you're placed on a team.";
+    }
+
     /* Submit */
-    document.getElementById('reg-form').addEventListener('submit', async (e) => {
+    $('reg-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const btn = document.getElementById('submit-btn');
-      const msg = document.getElementById('form-msg');
-      btn.disabled = true; btn.textContent = 'Saving…';
+      const btn = $('submit-btn');
+      const msg = $('form-msg');
+      const idle = btn.textContent;
+      btn.disabled = true; btn.textContent = inForm ? 'Opening Stripe…' : 'Saving…';
 
       const f = new FormData(e.target);
       const row = Object.fromEntries(f.entries());
+      const optionId = row.option_id; delete row.option_id;
       row.jersey_number = row.jersey_number ? parseInt(row.jersey_number, 10) : null;
       row.team_id = row.team_id || null;
-      row.waiver_accepted = document.getElementById('waiver').checked;
+      row.waiver_accepted = $('waiver').checked;
+
+      if (inForm) {
+        const err = await goToStripe({ registration: row, option_id: optionId });
+        if (!err) return;   // on our way to Stripe
+        msg.classList.remove('hidden');
+        msg.className = 'text-sm text-red-700';
+        msg.textContent = `${err} If it keeps happening, email ${CFG.CONTACT_EMAIL}.`;
+        btn.disabled = false; btn.textContent = idle;
+        return;
+      }
 
       const { error } = await sb.from('registrations').insert(row);
       msg.classList.remove('hidden');
 
       if (error) {
         msg.className = 'text-sm text-red-700';
-        msg.textContent = 'That did not save. Check your email address and try again, or email ' + window.IVY_CONFIG.CONTACT_EMAIL + '.';
-        btn.disabled = false; btn.textContent = 'Save my details';
+        msg.textContent = 'That did not save. Check your email address and try again, or email ' + CFG.CONTACT_EMAIL + '.';
+        btn.disabled = false; btn.textContent = idle;
         return;
       }
 
@@ -165,21 +258,24 @@ document.addEventListener('ivy:ready', async () => {
       msg.style.color = 'var(--ivy)';
       msg.textContent = 'Saved. Last step: pay through the Stripe link for your division on the right.';
       btn.textContent = 'Details saved';
-      document.getElementById('pay-links').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      $('pay-links').scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   }
 
-  /* Stripe links, editable in the admin portal. Shown either way. */
-  const { data: links } = await sb.from('payment_links').select('*').eq('active', true).order('sort');
-  document.getElementById('pay-links').innerHTML = (links || []).length
-    ? links.map(l => `
+  /* Side column: plain Stripe links (options without a Stripe price). */
+  $('pay-links').innerHTML = linkOpts.length
+    ? linkOpts.map(l => `
       <div class="panel p-5">
         <p class="display text-lg">${esc(l.label)}</p>
         ${l.price_text ? `<p class="scoreline text-2xl mt-1" style="color:var(--ivy)">${esc(l.price_text)}</p>` : ''}
         ${l.description ? `<p class="serif text-sm text-[#33463C] mt-2">${esc(l.description)}</p>` : ''}
         <a href="${esc(l.url)}" target="_blank" rel="noopener" class="btn btn-brass w-full mt-4">Pay with Stripe</a>
       </div>`).join('')
-    : `<div class="panel p-5"><p class="text-sm text-gray-600">Payment links go live when registration opens. Save your details and we will email you.</p></div>`;
+    : checkoutOpts.length
+      ? `<div class="panel p-5"><p class="serif text-sm text-[#33463C]">Payment happens on Stripe's secure checkout page, right after the form.
+          We never see your card number. Payment plans charge the same card automatically on each due date.</p>
+          <p class="text-xs text-gray-500 mt-3">Questions? <a class="underline" href="mailto:${esc(CFG.CONTACT_EMAIL)}">${esc(CFG.CONTACT_EMAIL)}</a></p></div>`
+      : `<div class="panel p-5"><p class="text-sm text-gray-600">Payment links go live when registration opens. Save your details and we will email you.</p></div>`;
 });
 </script>
 </body>
