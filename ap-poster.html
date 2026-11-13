@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>AP QR poster — Milton Ivy League</title>
+<link rel="icon" href="assets/img/logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
+<style>
+  @page { size: letter portrait; margin: 0.5in; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: #0c2418; font-family: 'Archivo', system-ui, sans-serif; }
+  .sheet { max-width: 7.5in; margin: 0 auto; padding: 0.4in 0.3in; text-align: center; }
+  .logo { height: 1.1in; }
+  h1 { font-size: 64px; line-height: 1; margin: 0.25in 0 0.1in; font-weight: 900; font-stretch: 85%; text-transform: uppercase; color: #09522B; letter-spacing: -0.01em; }
+  .sub { font-family: 'Newsreader', Georgia, serif; font-size: 24px; margin: 0 0 0.3in; }
+  .qr { width: 4.6in; max-width: 90vw; border: 6px solid #C08A2B; padding: 0.12in; border-radius: 8px; }
+  ol { text-align: left; display: inline-block; font-size: 20px; line-height: 1.6; margin: 0.3in 0 0.15in; padding-left: 1.4em; }
+  .url { font-size: 15px; color: #555; }
+  .print { margin: 0.3in auto 0; display: inline-block; padding: 12px 28px; background: #09522B; color: #fff; border: 0; border-radius: 3px; font: 700 16px 'Archivo', sans-serif; cursor: pointer; }
+  @media print { .print { display: none; } }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <img class="logo" src="assets/img/logo.png" alt="Milton Ivy League">
+  <h1>Playing as an AP?</h1>
+  <p class="sub">Scan to get on the game sheet. It takes 20 seconds.</p>
+  <img class="qr" src="assets/img/ap-qr.svg" alt="QR code for miltonivyleague.ca/ap.html">
+  <ol>
+    <li>Scan the code with your phone camera</li>
+    <li>Type your name and pick the team you're playing for</li>
+    <li>Enter the number you're wearing tonight</li>
+  </ol>
+  <p class="url">Or go to <b>miltonivyleague.ca/ap.html</b></p>
+  <button class="print" onclick="window.print()">Print this poster</button>
+</div>
+</body>
+</html>

@@ -141,6 +141,8 @@
   const TEAM_KEY = 'ivy.conrad.team';
   let cache = null, cacheAt = 0;
   let pending = null;            // intent waiting on "which team?"
+  let pendingName = false;       // waiting on "what name did you register under?"
+  let pendingNameAsked = false;  // ...because they asked to check the roster
 
   let myTeam = null;
   const remember = (team) => {
@@ -330,11 +332,122 @@
     return `Latest from the league:\n${list(d.news.map(n => `[${n.title}](news.html?id=${n.id})`))}`;
   }
 
+  /* ---------- small talk ----------
+     Short, in-character replies to chit-chat, each with a nudge back
+     toward something useful. pick() varies the wording. */
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const GREET_RE = /^\s*(?:(?:dude|bro|man|ok(?:ay)?|so|conrad)[\s,!]+)?(hi+|hey+|hello+|howdy|yo+|sup|wass?up|wh?at'?s? ?(?:up|good|happening|new|poppin'?g?|crackin'?g?)|how'?s it going|hiya|g'?day|good (morning|afternoon|evening|day)|greetings|evening|morning)\b[\s,!.?]*(there|dude|bro|man|buddy|pal|mate|conrad|guys|all|everyone)?\b[\s,!.?]*/i;
+
+  function smallTalk(text) {
+    const t = text.toLowerCase().replace(/[^a-z' ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const teamName = rememberedTeamName();
+    const nudge = teamName
+      ? pick([`Want to know when ${teamName} play next?`, `Shall I check on ${teamName}?`])
+      : pick(['Want to know when your team plays next?', 'Looking for the schedule, standings, or how to sign up?', 'Ask me about games, scores, or registration.']);
+
+    if (/^(how (are|r) (you|u|ya)|how'?s it going|how are things|how you doing|hows your (day|night)|you good|what'?s new)\b/.test(t))
+      return pick(['All systems running and the ice is freshly flooded.', 'Very well, thank you. Busy keeping score.', 'Never better. Nobody has asked me to play goal yet.']) + ' ' + nudge;
+    if (/\b(who|what) (are|r) (you|u)\b|\byour name\b|\bare you (a )?(bot|robot|ai|real|human)\b/.test(t))
+      return "I'm Conrad, the league's concierge. I'm not a person, but I read the league's records live, so I know the schedule, scores, standings and sign-up details. " + nudge;
+    if (/\b(joke|funny|make me laugh)\b/.test(t))
+      return pick([
+        "Why did the beer-league goalie bring a ladder? He heard the drinks were on the top shelf.",
+        "I asked the Zamboni driver how work was going. He said it's mostly going in circles.",
+        "Our penalty box has the best seats in the house. Unfortunately, they come with a two-minute limit."
+      ]) + ' ' + nudge;
+    if (/\b(bye|goodbye|see (ya|you)|later|good ?night|gn|cya|peace)\b/.test(t))
+      return pick(['Good night. Keep your stick on the ice.', 'Until next time. Mind the boards.', 'Cheers. See you at the rink.']);
+    if (/\b(love (you|it|this)|you('?re| are) (the best|great|awesome|cool|smart)|(this|that|it)('?s| is) (great|cool|awesome|sick|amazing|fire)|nice|cool|awesome|sick|dope|great job|good bot)\b/.test(t))
+      return pick(['Much obliged.', 'Kind of you to say.', 'I try to keep it tidy.']) + ' ' + nudge;
+    if (/\b(stupid|dumb|useless|suck|sucks|hate you|trash|idiot)\b/.test(t))
+      return "Fair enough. I only know league business, so I can miss the mark. Try asking about a team, the schedule, standings or registration, and I'll do better.";
+    if (/^(dude|bro|man|conrad|yo|hello\?|you there|anyone there)$/.test(t)) return greeting();
+    if (/^(ok(ay)?|k|kk|cool|sure|alright|got it|nice|lol|lmao|haha+|ha|wow|hmm+|yeah|yep|nope|no|yes)$/.test(t))
+      return pick(['Anything else I can look up?', 'Right then. What else can I find for you?', nudge]);
+    if (/\b(weather|cold|hot|snow)\b/.test(t))
+      return "Can't speak for outside, but inside the rink it's always a crisp few degrees. " + nudge;
+    if (/\b(beer|pint|drinks?|bar)\b/.test(t))
+      return "Pucks first, pints after. That's the league motto, more or less. " + nudge;
+    return null;
+  }
+
+  function greeting(rest) {
+    const teamName = rememberedTeamName();
+    const hi = pick(['Hey there.', 'Good to see you.', 'All good here, just keeping an eye on the scoreboard.', 'Hello.', 'Not much, just watching the scoreboard.']);
+    return `${hi} ${teamName ? `Want to know when ${teamName} play next, or something else?` : 'What can I find for you? Games, scores, standings, or sign-up.'}`;
+  }
+
+  const FALLBACKS = [
+    "That one's outside my rink, I'm afraid.",
+    "I didn't quite catch that.",
+    "Hmm, that's not something I keep in the league records.",
+    "You've lost me there."
+  ];
+
+  /* ---------- "am I registered?" ----------
+     Rosters are public on the Teams page, so Conrad can say whether a
+     name is on one. Registrations and payments are private (staff-only
+     in Supabase), so he never reads or reveals those. */
+  const NAME_KEY = 'ivy.conrad.name';
+  const savedName = () => { try { return localStorage.getItem(NAME_KEY); } catch (e) { return null; } };
+  const saveName = (n) => { try { localStorage.setItem(NAME_KEY, n); } catch (e) {} };
+  const forgetName = () => { try { localStorage.removeItem(NAME_KEY); } catch (e) {} };
+  const titleCase = (n) => n.replace(/\b([a-z])/g, c => c.toUpperCase());
+  const NOT_NAMES = new Set(('on with not a an the just looking trying new here good fine ok okay registered signed playing in from ' +
+    'going so very interested am and is i on there wondering asking checking sure back done ready still also a team player goalie ' +
+    'forward defence defense spare your his her their this that what who it me great awesome cool nice sick amazing bad ' +
+    'terrible fun crazy weird dumb stupid wrong right correct confused lost tired hungry bored excited happy sad glad').split(' '));
+
+  function cleanName(raw) {
+    const words = String(raw || '').toLowerCase().replace(/[^a-z' -]/g, ' ').trim().split(/\s+/).filter(Boolean);
+    const out = [];
+    for (const w of words) { if (NOT_NAMES.has(w) || out.length === 3) break; out.push(w); }
+    return out.length ? titleCase(out.join(' ')) : null;
+  }
+  function extractName(text) {
+    const m = text.match(/\b(?:my name is|my name's|name's|names|i am|i'm|im|this is|call me)\s+([a-z][a-z' -]*)/i);
+    if (m) return cleanName(m[1]);
+    return null;
+  }
+  // "is Jane Smith on a roster?" asks about someone, so it isn't saved as the visitor's name.
+  function askedAbout(text) {
+    const q = text.match(/\bis ([a-z]+ [a-z]+) (?:on|in) (?:a|the|any)? ?(?:roster|team|list)/i);
+    return q ? cleanName(q[1]) : null;
+  }
+  const ROSTER_RE = /\b(am i|are we|is my|did i|did my|have i|is [a-z]+ [a-z]+)\b[^.]*\b(regist\w*|signed up|on (the |a |any )?(roster|team|list)|on there|in yet|confirmed|go(ne)? through|paid up)\b|\bmy (registration|sign ?up|spot)\b|\bam i (on|in|registered|signed)\b/i;
+
+  async function rosterCheck(name, d, someoneElse) {
+    const parts = name.split(' ');
+    if (parts.length < 2) {
+      pendingName = true; pendingNameAsked = true;
+      return `Thanks, ${name}. What's your last name too? Rosters list players by full name.`;
+    }
+    const first = parts[0], last = parts.slice(1).join(' ');
+    const { data: rows, error } = await window.sb.from('players')
+      .select('first_name, last_name, jersey_number, status, team_id')
+      .ilike('first_name', first).ilike('last_name', last);
+    if (error) throw error;
+    const hits = (rows || []).filter(r => r.status !== 'inactive');
+    const email = window.IVY_CONTENT?.['footer.email'] || CFG.CONTACT_EMAIL;
+    if (!hits.length) {
+      return `I don't see a ${name} on any roster yet. You go on a roster once the league confirms your registration and payment. If you signed up recently it may still be in progress. ` +
+        `To check where it stands, email [${email}](mailto:${email}). New registrations open on the [Registration page](register.html).`;
+    }
+    const lines = hits.map(r => {
+      const team = d.byId[r.team_id];
+      const num = r.jersey_number != null ? ` wearing #${r.jersey_number}` : '';
+      return `${team ? team.name : 'a team'}${r.status === 'spare' ? ' (as a spare)' : r.status === 'ap' ? ' (as an AP)' : ''}${num}`;
+    });
+    const team = d.byId[hits[0].team_id];
+    if (team && !recalled() && !someoneElse) remember(team);
+    return `Yes, ${name} is on the roster: ${lines.join(', and ')}. ` +
+      (team && !someoneElse ? `Want to know when ${team.name} play next? Just ask "when do we play?"` : 'Rosters are on the [Teams page](teams.html).');
+  }
+
   const HELP = "I can tell you when your team plays next, recent scores, standings, scoring leaders, how to register and what it costs, or where we play. Try \"when do the Lagers play next?\"";
 
   /* Order matters: the first rule whose pattern matches wins. */
   const RULES = [
-    { re: /^(hi|hey|hello|yo|good (morning|afternoon|evening|day))\b[\s!.]*$/i, fn: () => `Good day. ${HELP}` },
     { re: /\b(thanks|thank you|cheers|thx|ty)\b/i, fn: () => 'My pleasure. Anything else?' },
     { re: /\b(regist|sign ?up|join|price|cost|fee|how much|pay|stripe|spot)/i, fn: register },
     { re: /\b(scor(ing|er)s? lead|top scor|leading scor|points lead|most (goals|points)|scorers?|leaders?)\b/i, fn: scorers, async: true },
@@ -362,6 +475,25 @@
   }
 
   async function answer(text) {
+    // Phones type curly apostrophes ("what’s up"); make them plain.
+    text = text.replace(/[\u2018\u2019\u201B`´]/g, "'").replace(/[\u201C\u201D]/g, '"').trim();
+    // Strip leading greetings ("hey, what's up dude,") so a question after them still works.
+    let g = text.match(GREET_RE), greeted = false;
+    while (g && g[0].trim()) {
+      greeted = true;
+      text = text.slice(g[0].length).trim();
+      g = text.match(GREET_RE);
+    }
+    if (greeted) {
+      const rest = text;
+      if (!rest) return greeting();
+      const chat = smallTalk(rest);
+      if (chat && !RULES.some(r => r.re.test(rest))) return chat;
+      text = rest;
+    }
+    const chat = smallTalk(text);
+    if (chat && !RULES.some(r => r.re.test(text))) return chat;
+
     const d = await data();
     const named = findTeam(text, d);
     const convoTeam = d.byId[convo.teamId] || null;
@@ -375,8 +507,35 @@
     }
     if (/\bforget (my team|me|that)\b/i.test(text)) {
       forget();
-      return "Done. I've forgotten your team.";
+      if (/\bforget (me|that)\b/i.test(text)) forgetName();
+      return /\bforget (me|that)\b/i.test(text) ? "Done. I've forgotten your name and team." : "Done. I've forgotten your team.";
     }
+
+    // Names and "am I registered / on a roster?"
+    const wantsRoster = ROSTER_RE.test(text);
+    let given = extractName(text);
+    if (!given && pendingName && !wantsRoster && !named) {
+      // Reply to "what name did you register under?": the message is the name.
+      // A one-word reply after we already have a first name is the last name.
+      const one = cleanName(text);
+      const prior = savedName();
+      given = one && !one.includes(' ') && prior && !prior.includes(' ') ? `${prior} ${one}` : one;
+    }
+    if (given) {
+      pendingName = false;
+      saveName(given);
+      if (wantsRoster || pendingNameAsked) { pendingNameAsked = false; return rosterCheck(given, d); }
+      return `Nice to meet you, ${given.split(' ')[0]}. I'll remember that. Want me to check whether you're on a roster yet? Just ask "am I registered?"`;
+    }
+    const other = askedAbout(text);
+    if (other && other.includes(' ')) { pendingName = false; return rosterCheck(other, d, true); }
+    if (wantsRoster) {
+      const n = savedName();
+      if (n) return rosterCheck(n, d);
+      pendingName = true; pendingNameAsked = true;
+      return "What name did you register under? I'll check the rosters. (Payment details are private, so for those the commissioners are the people to ask.)";
+    }
+    pendingName = false;
 
     // Reply to "which team are you on?"
     if (pending && named) {
@@ -401,7 +560,8 @@
 
     if (!rule) {
       if (named) { convo = { topic: 'teamsAnswer', teamId: named.id, shown: 3 }; return teamsAnswer(text, d, named); }
-      return `I'm not sure I follow. ${HELP}`;
+      teamChipsOrSuggestions(d);
+      return `${pick(FALLBACKS)} ${HELP}`;
     }
     let team = null;
     if (rule.team) {
@@ -411,6 +571,15 @@
     }
     if (rule.fn.name in TOPICS) convo = { topic: rule.fn.name, teamId: team?.id || null, shown: team ? 3 : 4 };
     return rule.fn(text, d, team);
+  }
+
+  function teamChipsOrSuggestions() {
+    const wrap = document.getElementById('conrad-chips');
+    if (!wrap) return;
+    const team = rememberedTeamName();
+    const list = [team ? `When do the ${team} play next?` : 'When is my next game?', 'Standings', 'How do I register?'];
+    wrap.innerHTML = list.map(q => `<button class="hud-chip" data-q="${window.Ivy.esc(q)}">${window.Ivy.esc(q)}</button>`).join('');
+    wrap.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { wrap.innerHTML = ''; send(b.dataset.q); });
   }
 
   function teamChips(teams) {

@@ -3,7 +3,7 @@
    - creates the Supabase client
    - renders the header and footer
    - swaps in editable text/images saved by admins ([data-cms])
-   - date/time + clock helpers used by the schedule and scoreboard
+   - date/time helpers used by the schedule and scoreboard
 --------------------------------------------------------------- */
 const CFG = window.IVY_CONFIG;
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
@@ -28,19 +28,12 @@ const fmtClock = (secs) => {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 };
 
-/* Remaining time on a running clock, derived from the last admin write. */
-function liveClockSeconds(game) {
-  if (!game) return 0;
-  if (!game.clock_running) return game.clock_seconds ?? 0;
-  const elapsed = (Date.now() - new Date(game.clock_updated_at).getTime()) / 1000;
-  return Math.max(0, (game.clock_seconds ?? 0) - elapsed);
-}
 
 const ordinal = (n) => ['', '1st', '2nd', '3rd', 'OT', 'SO'][n] || `${n}`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-window.Ivy = { fmtDate, fmtTime, fmtClock, liveClockSeconds, ordinal, esc, TZ };
+window.Ivy = { fmtDate, fmtTime, fmtClock, ordinal, esc, TZ };
 
 /* ---------- editable content -----------------------------------
    Any element with data-cms="hero.title" has its text replaced by
@@ -146,13 +139,13 @@ function chrome() {
         </a>
         <nav class="hidden md:flex items-center gap-1">${links}</nav>
         <div class="flex items-center gap-2">
-          <a href="admin.html" class="hidden sm:inline-flex btn btn-ghost !py-2 !px-3 !text-xs">Staff</a>
+          <a href="admin/" class="hidden sm:inline-flex btn btn-ghost !py-2 !px-3 !text-xs">Staff</a>
           <button id="nav-toggle" class="md:hidden btn btn-ghost !py-2 !px-3" aria-expanded="false" aria-label="Open menu">Menu</button>
         </div>
       </div>
       <nav id="nav-mobile" class="md:hidden hidden shell pb-4 flex flex-col gap-1">
         ${NAV.map(([l, h]) => `<a href="${h}" class="py-2 text-white/85 border-b border-white/10">${l}</a>`).join('')}
-        <a href="admin.html" class="py-2 text-white/85">Staff login</a>
+        <a href="admin/" class="py-2 text-white/85">Staff login</a>
       </nav>`;
 
   const t = document.getElementById('nav-toggle');

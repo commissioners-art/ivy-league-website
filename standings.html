@@ -8,9 +8,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="assets/css/ivy.css">
-<link rel="stylesheet" href="assets/css/hud-theme.css">
-<script src="assets/js/preload.js"></script>
+<link rel="stylesheet" href="assets/css/ivy.css?v=2026111301">
+<link rel="stylesheet" href="assets/css/hud-theme.css?v=2026111302">
+<script src="assets/js/preload.js?v=2026111302"></script>
 </head>
 <body>
 <header id="site-header"></header>
@@ -43,9 +43,9 @@
 <footer id="site-footer"></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/app.js"></script>
-<script src="assets/js/conrad.js"></script>
+<script src="assets/js/config.js?v=2026111301"></script>
+<script src="assets/js/app.js?v=2026111302"></script>
+<script src="assets/js/conrad.js?v=2026111301"></script>
 <script>
 document.addEventListener('ivy:ready', async () => {
   const { esc } = window.Ivy;
@@ -57,19 +57,20 @@ document.addEventListener('ivy:ready', async () => {
 
   document.getElementById('tables').innerHTML = Object.entries(byDiv).map(([div, teams]) => {
     teams.sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga));
+    const ties = teams.some(t => Number(t.t) > 0);   // NHL rules: no ties, so only show the column if there are any
     return `
       <div class="mb-10">
         <div class="rule mb-4">${esc(div)} division</div>
         <div class="panel overflow-x-auto">
           <table class="grid-table">
             <thead><tr><th>Team</th><th class="text-right">GP</th><th class="text-right">W</th><th class="text-right">L</th>
-              <th class="text-right">T</th><th class="text-right">GF</th><th class="text-right">GA</th>
+              <th class="text-right">OTL</th>${ties ? '<th class="text-right">T</th>' : ''}<th class="text-right">GF</th><th class="text-right">GA</th>
               <th class="text-right">Diff</th><th class="text-right">Pts</th></tr></thead>
             <tbody>${teams.map(t => `
               <tr>
                 <td class="font-semibold"><a href="teams.html#${t.team_id}" class="hover:underline">${esc(t.name)}</a></td>
                 <td class="text-right">${t.gp}</td><td class="text-right">${t.w}</td>
-                <td class="text-right">${t.l}</td><td class="text-right">${t.t}</td>
+                <td class="text-right">${t.l}</td><td class="text-right">${t.otl ?? 0}</td>${ties ? `<td class="text-right">${t.t}</td>` : ''}
                 <td class="text-right">${t.gf}</td><td class="text-right">${t.ga}</td>
                 <td class="text-right">${t.gf - t.ga > 0 ? '+' : ''}${t.gf - t.ga}</td>
                 <td class="text-right font-bold" style="color:var(--ivy)">${t.pts}</td>

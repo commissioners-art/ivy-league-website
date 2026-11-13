@@ -139,7 +139,9 @@ create table if not exists games (
   home_score     int default 0,
   away_score     int default 0,
   period         int default 1,
-  clock_seconds  int default 1200,         -- time remaining in the period
+  -- clock_* columns are no longer used: game time is estimated from
+  -- starts_at and scorekeepers type the time on each event.
+  clock_seconds  int default 1200,
   clock_running  boolean default false,
   clock_updated_at timestamptz default now(),
   notes          text
@@ -265,6 +267,14 @@ drop policy if exists "staff manage regs" on registrations;
 create policy "staff manage regs" on registrations for update using (is_staff()) with check (is_staff());
 drop policy if exists "admin delete regs" on registrations;
 create policy "admin delete regs" on registrations for delete using (is_admin());
+
+-- ---------- suspensions -------------------------------------------
+-- Defined in supabase/suspensions.sql (run that file after this one).
+-- Overtime/shootout columns and the NHL-style standings are in
+-- supabase/overtime.sql (run that after this one too).
+
+-- ---------- APs (call-ups) --------------------------------------
+-- Defined in supabase/ap.sql (run that file after this one).
 
 -- ---------- realtime ---------------------------------------------
 alter publication supabase_realtime add table games;
