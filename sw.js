@@ -5,10 +5,10 @@
    straight away), falling back to the last saved copy when offline.
    Supabase (data, chat, sign-in) and other sites: never cached.
 --------------------------------------------------------------- */
-const CACHE = 'ivy-team-v2';
+const CACHE = 'ivy-team-v3';
 const SHELL = [
   'team.html', 'team.webmanifest',
-  'assets/css/ivy.css', 'assets/css/team.css',
+  'assets/css/ivy.css', 'assets/css/hud-theme.css', 'assets/css/team.css',
   'assets/js/config.js', 'assets/js/app.js', 'assets/js/league.js', 'assets/js/preload.js',
   'assets/js/team-api.js', 'assets/js/team.js',
   'assets/img/logo.png', 'assets/img/app/icon-192.png'

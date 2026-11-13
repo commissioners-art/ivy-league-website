@@ -102,3 +102,41 @@
 html.tp-app #site-header, html.tp-app #site-footer, html.tp-app #tp-install { display: none; }
 html.tp-app #tp-hero, html.tp-app #tp-signin { padding-top: env(safe-area-inset-top); }
 html.tp-app body { overscroll-behavior-y: none; }
+
+/* ---- Dark theme (html.hud, the site's default look) ----------- */
+html.hud #tp-hero {
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--team, #09522B) 45%, transparent) 0%, transparent 75%),
+    #081A10;
+  border-bottom: 1px solid var(--line);
+}
+html.hud #tp-logo { background: rgba(228,238,232,.06); }
+html.hud .tp-tab.on { border-bottom-color: var(--accent); }
+
+html.hud .tp-day { background: rgba(228,238,232,.06); color: var(--hud-muted); }
+html.hud .tp-msg .who { color: var(--hud-muted); }
+html.hud .tp-msg .who .c { color: var(--brass-soft); }
+html.hud .tp-msg .bubble { background: rgba(228,238,232,.07); color: var(--ink); }
+html.hud .tp-msg.mine .bubble { background: #12603A; color: #F4F8F5; }
+html.hud .tp-msg.office .bubble { background: rgba(192,138,43,.16); color: #F3E2BE; }
+html.hud .tp-msg .meta { color: rgba(228,238,232,.45); }
+html.hud .tp-msg .meta button { color: var(--accent); }
+html.hud .tp-msg .meta button.del, html.hud .tp-game .res.l { color: #FF8A78; }
+html.hud .tp-compose { background: transparent; border-top-color: var(--line); }
+
+html.hud .tp-pin { background: rgba(192,138,43,.08); border-color: rgba(192,138,43,.45); }
+html.hud .tp-pin .tag, html.hud .tp-pin button { color: var(--brass-soft); }
+
+html.hud .tp-game .when, html.hud .tp-game .vs span { color: var(--hud-muted); }
+html.hud .tp-game .when b { color: var(--ink); }
+html.hud .tp-game .res.w { color: var(--accent); }
+html.hud .tp-tag.cap { background: var(--accent); color: #06140D; }
+html.hud .tp-nextgame { border-color: rgba(111,207,154,.22); }
+
+html.hud .tp-install { background: var(--hud-panel); border-color: var(--line); }
+html.hud .tp-toast { color: #fff; }
+html.hud .tp-bottom button { color: rgba(228,238,232,.5); }
+html.hud .tp-bottom button.on { color: var(--accent); }
+@media (max-width: 767px) {
+  html.hud body.tp-in .tp-bottom { background: rgba(8,26,16,.96); border-top-color: var(--line); }
+}
