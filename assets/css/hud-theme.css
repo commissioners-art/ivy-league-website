@@ -1,5 +1,5 @@
 /* ===============================================================
-   HUD theme — Conrad's heads-up-display look, carried site-wide.
+   HUD theme — a quiet, dark take on Conrad's look, site-wide.
 
    Everything here is scoped to html.hud, so the classic look is
    untouched unless the theme is switched on. preload.js adds the
@@ -8,175 +8,104 @@
                                  ?theme=classic switches back), or
      - site_content "theme.style" is "hud"  (site-wide switch).
 
-   Same crest palette, lit up: dark evergreen glass, glowing ivy
-   lines, brass corner brackets, mono labels.
+   Restraint is the point: deep evergreen surfaces, hairline
+   borders, one soft green accent, and Conrad's glow kept for the
+   few things that are actually live.
 =============================================================== */
 
 html.hud {
-  --paper: #020E08;
-  --ink:   #DDF5E7;
-  --line:  rgba(63, 224, 143, .16);
-  --ice:   rgba(63, 224, 143, .07);
-  --hud-panel: rgba(5, 30, 18, .72);
-  --hud-muted: rgba(221, 245, 231, .58);
-  --hud-soft:  rgba(221, 245, 231, .78);
+  --paper: #06140D;
+  --ink:   #E4EEE8;
+  --line:  rgba(228, 238, 232, .09);
+  --ice:   rgba(228, 238, 232, .04);
+  --accent: #6FCF9A;                 /* softer than Conrad's glow */
+  --hud-panel: #0B1D14;
+  --hud-muted: rgba(228, 238, 232, .55);
+  --hud-soft:  rgba(228, 238, 232, .75);
   color-scheme: dark;
 }
 
 html.hud body {
-  background-color: var(--paper);
-  background-image:
-    radial-gradient(90% 50% at 50% -10%, rgba(63,224,143,.10), transparent 70%),
-    linear-gradient(rgba(63,224,143,.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(63,224,143,.035) 1px, transparent 1px);
-  background-size: auto, 48px 48px, 48px 48px;
-  background-attachment: fixed;
+  background: var(--paper);
   color: var(--ink);
 }
-html.hud ::selection { background: rgba(63,224,143,.35); color: #fff; }
+html.hud ::selection { background: rgba(111,207,154,.3); color: #fff; }
 
 /* ---- Type ---------------------------------------------------- */
-html.hud .lede,
-html.hud .serif { font-family: 'Archivo', system-ui, sans-serif; font-weight: 400; letter-spacing: .005em; }
-html.hud .display { color: #fff; text-shadow: 0 0 18px rgba(63,224,143,.18); }
-
-/* Section marker becomes a HUD readout: ▸ LABEL ───── */
-html.hud .rule {
-  font-family: var(--hud-mono); font-size: .72rem; font-weight: 600;
-  letter-spacing: .22em; text-transform: uppercase; color: var(--hud-glow);
-}
-html.hud .rule::before {
-  content: ''; width: 7px; height: 7px; flex: none;
-  background: var(--hud-glow); box-shadow: 0 0 8px var(--hud-glow);
-  transform: rotate(45deg);
-}
-html.hud .rule::after {
-  background: linear-gradient(90deg, var(--hud-glow-dim), rgba(192,138,43,.35) 40%, transparent);
-}
+html.hud .display { color: #F4F8F5; }
+html.hud .rule { color: var(--accent); }
+html.hud .rule::after { background: linear-gradient(90deg, var(--line), transparent); }
 
 /* ---- Hero / header / footer fields --------------------------- */
 html.hud .crest-field {
-  background-color: #031A0E;
-  background-image:
-    radial-gradient(70% 120% at 85% 0%, rgba(63,224,143,.16), transparent 60%),
-    radial-gradient(60% 90% at 0% 100%, rgba(192,138,43,.08), transparent 70%),
-    repeating-linear-gradient(0deg, rgba(63,224,143,.04) 0 1px, transparent 1px 3px),
-    linear-gradient(rgba(63,224,143,.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(63,224,143,.05) 1px, transparent 1px);
-  background-size: auto, auto, auto, 32px 32px, 32px 32px;
+  background-color: #081A10;
+  background-image: radial-gradient(80% 120% at 85% 0%, rgba(111,207,154,.08), transparent 60%);
 }
-html.hud #site-header > .crest-field {
-  border-bottom: 1px solid transparent;
-  border-image: linear-gradient(90deg, transparent, var(--hud-glow) 20%, var(--brass) 50%, var(--hud-glow) 80%, transparent) 1;
-  box-shadow: 0 8px 30px -18px var(--hud-glow);
-}
-html.hud #site-footer > .crest-field {
-  border-top: 1px solid var(--hud-glow-dim);
-  box-shadow: 0 -8px 30px -20px var(--hud-glow);
-}
-html.hud #site-header nav a { font-family: var(--hud-mono); font-size: .74rem; letter-spacing: .14em; text-transform: uppercase; }
+html.hud #site-header > .crest-field { border-bottom: 1px solid var(--line); }
+html.hud #site-footer > .crest-field { border-top: 1px solid var(--line); background-image: none; }
 html.hud #site-header nav a.bg-white\/15 {
-  background: rgba(63,224,143,.12); color: #fff;
-  box-shadow: inset 0 -2px 0 var(--hud-glow);
-}
-html.hud #site-header img,
-html.hud #site-footer img {
-  box-shadow: 0 0 0 1px var(--hud-glow-dim), 0 0 22px -4px var(--hud-glow);
+  background: transparent; color: #fff;
+  box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0;
 }
 
-/* One slow scan line across page heroes (not the header). */
-html.hud section.crest-field { position: relative; overflow: hidden; }
-html.hud section.crest-field::after {
-  content: ''; position: absolute; left: 0; right: 0; top: -2px; height: 2px; pointer-events: none;
-  background: linear-gradient(90deg, transparent, var(--hud-glow), transparent);
-  opacity: .45; box-shadow: 0 0 14px var(--hud-glow);
-  animation: hud-scan 7s linear infinite;
-}
-@keyframes hud-scan { from { top: -2px; } to { top: 100%; } }
-
-/* ---- Panels: dark glass with brass corner brackets ------------ */
+/* ---- Panels -------------------------------------------------- */
 html.hud .panel,
-html.hud .panel-deep,
-html.hud #hero-game {
-  position: relative;
+html.hud .panel-deep {
   background: var(--hud-panel);
   color: var(--ink);
   border: 1px solid var(--line);
-  border-radius: 4px;
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-  box-shadow: inset 0 1px 0 rgba(63,224,143,.08), 0 18px 40px -28px rgba(0,0,0,.9);
+  border-radius: 8px;
 }
-html.hud .panel-deep { background: rgba(3,20,12,.9); border-color: var(--hud-glow-dim); }
-html.hud #hero-game { border-color: var(--hud-glow-dim); box-shadow: 0 0 40px -16px var(--hud-glow); }
-html.hud .panel::before,
-html.hud .panel-deep::before,
-html.hud #hero-game::before {
-  content: ''; position: absolute; inset: 3px; pointer-events: none; z-index: 1;
-  --c: var(--brass); --l: 12px; --w: 1.5px;
-  background:
-    linear-gradient(var(--c), var(--c)) top left    / var(--l) var(--w),
-    linear-gradient(var(--c), var(--c)) top left    / var(--w) var(--l),
-    linear-gradient(var(--c), var(--c)) top right   / var(--l) var(--w),
-    linear-gradient(var(--c), var(--c)) top right   / var(--w) var(--l),
-    linear-gradient(var(--c), var(--c)) bottom left / var(--l) var(--w),
-    linear-gradient(var(--c), var(--c)) bottom left / var(--w) var(--l),
-    linear-gradient(var(--c), var(--c)) bottom right/ var(--l) var(--w),
-    linear-gradient(var(--c), var(--c)) bottom right/ var(--w) var(--l);
-  background-repeat: no-repeat;
-  opacity: .8;
+html.hud .panel-deep { background: #0E2418; }
+html.hud #hero-game {
+  background: rgba(6,20,13,.55);
+  border-color: rgba(111,207,154,.22);
+  border-radius: 8px;
 }
-html.hud a.panel:hover { border-color: var(--hud-glow-dim); box-shadow: 0 0 28px -12px var(--hud-glow); }
+html.hud a.panel:hover { border-color: rgba(111,207,154,.3); background: #0E2219; }
 
 /* ---- Buttons ------------------------------------------------- */
-html.hud .btn {
-  font-family: var(--hud-mono); font-size: .74rem; font-weight: 700;
-  letter-spacing: .16em; text-transform: uppercase; border-radius: 3px;
-}
-html.hud .btn-primary { background: var(--hud-glow); color: #03140C; box-shadow: 0 0 22px -6px var(--hud-glow); }
-html.hud .btn-primary:hover { background: #fff; color: #03140C; }
-html.hud .btn-brass { background: var(--brass); color: #140D02; box-shadow: 0 0 22px -6px var(--brass); }
-html.hud .btn-brass:hover { background: var(--brass-soft); color: #140D02; }
-html.hud .btn-ghost { border: 1px solid var(--hud-glow-dim); color: var(--hud-text); background: rgba(63,224,143,.04); }
-html.hud .btn-ghost:hover { border-color: var(--hud-glow); color: #fff; box-shadow: 0 0 16px -6px var(--hud-glow); background: rgba(63,224,143,.1); }
-html.hud .btn-quiet { border: 1px solid var(--hud-glow-dim); color: var(--hud-text); background: transparent; }
-html.hud .btn-quiet:hover { background: rgba(63,224,143,.1); color: #fff; }
+html.hud .btn { border-radius: 6px; }
+html.hud .btn-primary { background: var(--accent); color: #06140D; }
+html.hud .btn-primary:hover { background: #8FDDB2; color: #06140D; }
+html.hud .btn-brass:hover { background: var(--brass-soft); color: #1B1204; }
+html.hud .btn-ghost { border-color: rgba(228,238,232,.25); }
+html.hud .btn-ghost:hover { background: rgba(228,238,232,.06); }
+html.hud .btn-quiet { border: 1px solid var(--line); color: var(--ink); background: transparent; }
+html.hud .btn-quiet:hover { background: var(--ice); }
 
 /* ---- Forms --------------------------------------------------- */
-html.hud .label { font-family: var(--hud-mono); font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; color: var(--hud-muted); }
-html.hud .field {
-  background: rgba(2,14,8,.7); color: #fff; border-color: var(--line);
-}
-html.hud .field::placeholder { color: rgba(221,245,231,.35); }
-html.hud .field:focus { border-color: var(--hud-glow); box-shadow: 0 0 0 1px var(--hud-glow-dim), 0 0 18px -6px var(--hud-glow); outline: 0; }
-html.hud select.field option { background: #031A0E; color: #fff; }
-html.hud input[type="checkbox"] { accent-color: var(--hud-glow); }
+html.hud .label { color: var(--hud-muted); }
+html.hud .field { background: #06140D; color: #fff; border-color: rgba(228,238,232,.14); border-radius: 6px; }
+html.hud .field::placeholder { color: rgba(228,238,232,.35); }
+html.hud .field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(111,207,154,.15); outline: 0; }
+html.hud select.field option { background: #0B1D14; color: #fff; }
+html.hud input[type="checkbox"] { accent-color: var(--accent); }
 
 /* ---- Tables -------------------------------------------------- */
 html.hud .grid-table thead th {
-  background: rgba(63,224,143,.06); color: var(--hud-glow);
-  font-family: var(--hud-mono); font-size: .68rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
-  border-bottom: 1px solid var(--hud-glow-dim);
+  background: transparent; color: var(--hud-muted);
+  font-weight: 600; letter-spacing: .04em; text-transform: uppercase; font-size: .7rem;
+  border-bottom: 1px solid rgba(228,238,232,.14);
 }
 html.hud .grid-table tbody td { border-bottom-color: var(--line); }
-html.hud .grid-table tbody tr:nth-child(even) { background: rgba(63,224,143,.025); }
-html.hud .grid-table tbody tr:hover { background: rgba(63,224,143,.08); }
+html.hud .grid-table tbody tr:nth-child(even) { background: transparent; }
+html.hud .grid-table tbody tr:hover { background: var(--ice); }
 
-/* ---- Scoreboard ---------------------------------------------- */
-html.hud .scoreline { color: #fff; text-shadow: 0 0 22px rgba(63,224,143,.45); }
-html.hud .pulse-live::before { background: #FF5A45; box-shadow: 0 0 8px #FF5A45; }
+/* ---- Live: the one place Conrad's glow shows ----------------- */
+html.hud .scoreline { color: #fff; }
+html.hud .pulse-live::before { background: #FF5A45; box-shadow: 0 0 6px rgba(255,90,69,.7); }
 html.hud [style*="background:var(--ivy-deep)"] {
-  background: rgba(63,224,143,.07) !important;
-  border-bottom: 1px solid var(--hud-glow-dim);
-  font-family: var(--hud-mono); letter-spacing: .12em; text-transform: uppercase;
+  background: rgba(228,238,232,.03) !important;
+  border-bottom: 1px solid var(--line);
 }
+html.hud [data-clock] { color: var(--accent) !important; }
 
 /* ---- Remap light-theme colours used in page markup ----------- */
-/* Inline "color:var(--ivy)" was dark green on white; light it up. */
-html.hud [style*="color:var(--ivy)"] { color: var(--hud-glow) !important; }
-html.hud [style*="color:var(--brass-soft)"] { text-shadow: 0 0 12px rgba(192,138,43,.5); }
-html.hud .text-gray-400 { color: rgba(221,245,231,.42); }
+html.hud [style*="color:var(--ivy)"] { color: var(--accent) !important; }
+html.hud .text-gray-400 { color: rgba(228,238,232,.4); }
 html.hud .text-gray-500 { color: var(--hud-muted); }
-html.hud .text-gray-600 { color: rgba(221,245,231,.66); }
+html.hud .text-gray-600 { color: rgba(228,238,232,.65); }
 html.hud .text-\[\#33463C\],
 html.hud .text-\[\#243b30\] { color: var(--hud-soft); }
 html.hud .text-red-600,
@@ -184,9 +113,4 @@ html.hud .text-red-700 { color: #FF8A78; }
 html.hud .border,
 html.hud .border-t,
 html.hud .border-b { border-color: var(--line); }
-html.hud a.underline, html.hud .underline { text-decoration-color: var(--hud-glow-dim); }
-html.hud img.rounded-md { border: 1px solid var(--line); }
-
-@media (prefers-reduced-motion: reduce) {
-  html.hud section.crest-field::after { animation: none; display: none; }
-}
+html.hud .underline { text-decoration-color: rgba(111,207,154,.4); }
