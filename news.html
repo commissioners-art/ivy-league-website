@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..900&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="assets/css/ivy.css?v=2026111301">
-<script src="assets/js/preload.js?v=2026111301"></script>
+<link rel="stylesheet" href="assets/css/ivy.css?v=2026111302">
+<script src="assets/js/preload.js?v=2026111302"></script>
 </head>
 <body>
 <header id="site-header"></header>
@@ -26,9 +26,9 @@
 <footer id="site-footer"></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js?v=2026111301"></script>
-<script src="assets/js/app.js?v=2026111301"></script>
-<script src="assets/js/conrad.js?v=2026111301"></script>
+<script src="assets/js/config.js?v=2026111302"></script>
+<script src="assets/js/app.js?v=2026111302"></script>
+<script src="assets/js/conrad.js?v=2026111302"></script>
 <script>
 document.addEventListener('ivy:ready', async () => {
   const { fmtDate, esc } = window.Ivy;
@@ -49,7 +49,7 @@ document.addEventListener('ivy:ready', async () => {
     <a href="index.html" class="text-sm font-semibold" style="color:var(--ivy)">&larr; Back to home</a>
     <p class="text-sm text-gray-500 mt-6">${fmtDate(n.published_at, { year: 'numeric' })}</p>
     <h1 class="display text-3xl md:text-4xl mt-2 mb-6">${esc(n.title)}</h1>
-    ${n.image_url ? `<img src="${esc(n.image_url)}" alt="" class="w-full rounded-md mb-8 object-cover" style="max-height:26rem">` : ''}
+    ${n.image_url ? `<img src="${esc(n.image_url)}" alt="" class="photo-full" decoding="async">` : ''}
     <div class="serif text-[#243b30] text-lg leading-relaxed">${paragraphs || '<p class="text-gray-500">Nothing more to read here yet.</p>'}</div>
     ${n.link_url ? `<a href="${esc(n.link_url)}" class="btn btn-quiet mt-8">Related link</a>` : ''}`;
 
