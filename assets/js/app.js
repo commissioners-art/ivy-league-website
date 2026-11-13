@@ -135,12 +135,14 @@ function chrome() {
         </a>
         <nav class="hidden md:flex items-center gap-1">${links}</nav>
         <div class="flex items-center gap-2">
+          <a href="team.html" class="hidden sm:inline-flex btn btn-brass !py-2 !px-3 !text-xs whitespace-nowrap">My team</a>
           <a href="admin/" class="hidden sm:inline-flex btn btn-ghost !py-2 !px-3 !text-xs">Staff</a>
           <button id="nav-toggle" class="md:hidden btn btn-ghost !py-2 !px-3" aria-expanded="false" aria-label="Open menu">Menu</button>
         </div>
       </div>
       <nav id="nav-mobile" class="md:hidden hidden shell pb-4 flex flex-col gap-1">
         ${NAV.map(([l, h]) => `<a href="${h}" class="py-2 text-white/85 border-b border-white/10">${l}</a>`).join('')}
+        <a href="team.html" class="py-2 text-white/85 border-b border-white/10">My team</a>
         <a href="admin/" class="py-2 text-white/85">Staff login</a>
       </nav>`;
 

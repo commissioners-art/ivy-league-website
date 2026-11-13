@@ -7,6 +7,7 @@
                     suspensions
      Suspensions    every suspension in the league
      Email lists    pick a group, copy their emails or open a BCC email
+     Team chats     read and moderate every team's portal chat
    Loaded before admin.js and uses its helpers (sb, esc, mount,
    toast, fmtDT, me, go, setCount) when the views run.
 --------------------------------------------------------------- */
@@ -25,23 +26,26 @@ const isMissingTable = error => error && /relation|does not exist|schema cache/i
    contact details and payment come from their registration, when
    they have one (APs and hand-added players usually don't). */
 async function loadPeople() {
-  const [{ data: players }, { data: regs }, { data: teams }, susp] = await Promise.all([
+  const [{ data: players }, { data: regs }, { data: teams }, susp, { data: contacts }] = await Promise.all([
     sb.from('players').select('*').order('last_name'),
     sb.from('registrations').select('*').order('created_at', { ascending: false }),
     sb.from('teams').select('id,name,division,roster_cap').order('name'),
-    IvySusp.loadActive(sb)
+    IvySusp.loadActive(sb),
+    /* team portal: details players typed in their profile, or APs added by their team */
+    sb.from('player_contacts').select('*').then(r => r, () => ({ data: [] }))
   ]);
+  const contactBy = new Map((contacts || []).map(c => [c.player_id, c]));
   const teamBy = new Map((teams || []).map(t => [t.id, t]));
   const regByPlayer = new Map();
   (regs || []).forEach(r => { if (r.player_id && !regByPlayer.has(r.player_id)) regByPlayer.set(r.player_id, r); });
   const suspBy = IvySusp.byPlayer(susp);
 
   const people = (players || []).map(p => {
-    const r = regByPlayer.get(p.id);
+    const r = regByPlayer.get(p.id), c = contactBy.get(p.id);
     return {
       key: p.id, player: p, reg: r, name: fullName(p), status: p.status || 'active',
       team: teamBy.get(p.team_id), number: p.jersey_number, position: p.position,
-      email: r?.email, phone: r?.phone, paid: r?.payment_status, susp: suspBy.get(p.id)
+      email: c?.email || r?.email, phone: c?.phone || r?.phone, paid: r?.payment_status, susp: suspBy.get(p.id)
     };
   });
   /* registrations that haven't been put on a roster yet (declined ones are left out) */
@@ -378,11 +382,13 @@ async function playerView(key) {
           </dl>
           <label class="label" for="pay">Payment</label>
           <select id="pay" class="field !w-48">${opt(['unpaid', 'paid', 'refunded', 'comped'], reg.payment_status)}</select>`
-          : `<p class="text-sm text-gray-600">No registration on file${status === 'ap' ? ': APs check in at the rink and don’t register' : ''}, so there are no contact details or payment to show.</p>`}
+          : `<p class="text-sm text-gray-600">No registration on file${status === 'ap' ? ': APs check in at the rink or are added by their team, and don’t register' : ''}, so there’s no payment to show. Any email or phone their team added is under Team portal.</p>`}
         </section>
       </div>
 
       <div class="grid gap-6 content-start">
+        ${p ? `<section class="panel p-5" id="portal-panel"><div class="rule mb-2">Team portal</div>
+          <p class="text-sm text-gray-500">Loading…</p></section>` : ''}
         ${p ? `
         <section class="panel p-5">
           <div class="rule mb-4">Suspensions</div>
@@ -478,6 +484,8 @@ async function playerView(key) {
     };
     $('rq-wait').onclick = () => setReg({ status: 'waitlist' }, 'Moved to the waitlist.');
   }
+
+  if (p) portalPanel(p, reg, () => playerView(key));
 
   if (reg) $('pay').onchange = async e => {
     const { error } = await sb.from('registrations').update({ payment_status: e.target.value }).eq('id', reg.id);
@@ -613,8 +621,8 @@ async function commsView() {
   mount(`
     <h2 class="display text-3xl mb-1">Email lists</h2>
     <p class="text-sm text-gray-600 mb-6 max-w-2xl">Pick who you want to reach. Copy their addresses into your email, or open a new email
-      with everyone in BCC so nobody sees each other's address. Emails come from registrations, so APs and hand-added players
-      without a registration aren't included.</p>
+      with everyone in BCC so nobody sees each other's address. Emails come from registrations and the team portal, so APs and hand-added players
+      are included only if someone added their email.</p>
     <div class="grid lg:grid-cols-[20rem,1fr] gap-6 items-start">
       <div class="panel p-2" id="groups">
         ${groups.map(([k, l, fn], i) => `
@@ -671,4 +679,144 @@ async function commsView() {
   document.getElementById('g-csv').onclick = () => downloadCsv([['name', 'email', 'phone', 'team']]
     .concat(current.map(p => [p.name, p.email, p.phone ?? '', p.team?.name ?? ''])), 'ivy-email-list.csv');
   pick('all');
+}
+
+/* ================= Team portal: player profile panel ================= */
+/* Captain + mute switches, the email/phone they sign in with, and every
+   device signed in as them (each one can be signed out). */
+async function portalPanel(p, reg, reload) {
+  const el = document.getElementById('portal-panel'); if (!el) return;
+  const [{ data: logins, error }, { data: contact }] = await Promise.all([
+    sb.from('player_logins').select('*').eq('player_id', p.id).order('last_seen', { ascending: false }),
+    sb.from('player_contacts').select('*').eq('player_id', p.id).maybeSingle()
+  ]);
+  if (error) {
+    el.innerHTML = `<div class="rule mb-2">Team portal</div><p class="text-sm text-gray-600">${isMissingTable(error)
+      ? 'The team portal isn’t set up in the database yet. Run supabase/team-portal.sql.' : 'Couldn’t load portal details.'}</p>`;
+    return;
+  }
+  const email = contact?.email || reg?.email || '', phone = contact?.phone || reg?.phone || '';
+  const device = ua => !ua ? 'Unknown device' : /iPhone|iPad/.test(ua) ? 'iPhone/iPad' : /Android/.test(ua) ? 'Android phone'
+    : /Mac OS/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows PC' : 'Browser';
+  el.innerHTML = `
+    <div class="rule mb-3">Team portal</div>
+    <div class="flex flex-wrap gap-4 mb-4 text-sm">
+      <label class="flex items-center gap-2"><input type="checkbox" id="tp-cap" ${p.captain ? 'checked' : ''}> Captain <span class="text-gray-500">(can pin and delete chat messages)</span></label>
+      <label class="flex items-center gap-2"><input type="checkbox" id="tp-mute" ${p.chat_muted ? 'checked' : ''}> Muted in team chat</label>
+    </div>
+    <p class="label">Signs in with</p>
+    <form id="tp-contact" class="grid sm:grid-cols-[1fr,1fr,auto] gap-2 mb-1">
+      <input class="field" name="email" type="email" placeholder="Email" value="${esc(email)}" aria-label="Portal email">
+      <input class="field" name="phone" type="tel" placeholder="Phone" value="${esc(phone)}" aria-label="Portal phone">
+      <button class="btn btn-quiet !text-sm">Save</button>
+    </form>
+    <p class="text-xs text-gray-500 mb-4">${reg ? 'Their registration email and phone always work too.' : 'No registration on file, so these are the only details they can sign in with.'}</p>
+    <p class="label">Signed in on</p>
+    ${(logins || []).length ? `<div id="tp-devs">${logins.map(l => `
+      <div class="flex items-center gap-3 text-sm py-1.5 border-b" style="border-color:var(--line)">
+        <span class="flex-1">${esc(device(l.device))} <span class="text-gray-500 text-xs">· since ${fmtDay(l.created_at)} · last seen ${fmtDay(l.last_seen)}</span></span>
+        <button data-auth="${l.auth_id}" class="text-xs text-red-700 hover:underline">Sign out</button>
+      </div>`).join('')}</div>` : '<p class="text-sm text-gray-600">Not signed in anywhere yet.</p>'}`;
+
+  const flag = (field, label) => async e => {
+    const { error } = await sb.from('players').update({ [field]: e.target.checked }).eq('id', p.id);
+    toast(error ? 'Couldn’t save that.' : `${label} ${e.target.checked ? 'on' : 'off'}.`, !error);
+  };
+  document.getElementById('tp-cap').onchange = flag('captain', 'Captain');
+  document.getElementById('tp-mute').onchange = flag('chat_muted', 'Chat mute');
+  document.getElementById('tp-contact').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    const { error } = await sb.from('player_contacts').upsert({
+      player_id: p.id, email: f.email.trim().toLowerCase() || null, phone: f.phone.trim() || null, updated_at: new Date().toISOString()
+    });
+    toast(error ? 'Couldn’t save sign-in details.' : 'Sign-in details saved.', !error);
+  });
+  document.getElementById('tp-devs')?.addEventListener('click', async e => {
+    const b = e.target.closest('[data-auth]'); if (!b) return;
+    if (!confirm('Sign this device out of the team portal?')) return;
+    const { error } = await sb.from('player_logins').delete().eq('player_id', p.id).eq('auth_id', b.dataset.auth);
+    toast(error ? 'Couldn’t sign it out.' : 'Signed out.', !error);
+    reload();
+  });
+}
+
+/* ================= Team chats ================= */
+async function chatsView(arg) {
+  mount(`<p class="text-sm text-gray-500">Loading…</p>`);
+  const { data: teams } = await sb.from('teams').select('id,name,division').order('division').order('name');
+  if (view !== 'chats') return;
+  const teamId = (teams || []).some(t => t.id === arg) ? arg : teams?.[0]?.id;
+  if (!teamId) return mount('<h2 class="display text-3xl mb-2">Team chats</h2><p class="text-sm text-gray-600">No teams yet.</p>');
+
+  const [{ data: msgs, error }, { data: removed }, { data: players }, { data: logins }] = await Promise.all([
+    sb.from('team_messages').select('*').eq('team_id', teamId).order('created_at', { ascending: false }).limit(200),
+    sb.from('message_removals').select('*'),
+    sb.from('players').select('id, first_name, last_name, captain, chat_muted').eq('team_id', teamId),
+    sb.from('player_logins').select('player_id')
+  ]);
+  if (view !== 'chats') return;
+  if (error) return mount(`<h2 class="display text-3xl mb-2">Team chats</h2><p class="text-sm text-gray-600">${isMissingTable(error)
+    ? 'The team portal isn’t set up in the database yet. Run supabase/team-portal.sql in Supabase, and turn on anonymous sign-ins.' : 'Couldn’t load the chat.'}</p>`);
+
+  const removedBy = new Map((removed || []).map(r => [r.message_id, r]));
+  const playerBy = new Map((players || []).map(p => [p.id, p]));
+  const signedIn = new Set((logins || []).map(l => l.player_id));
+  const onTeam = (players || []).filter(p => signedIn.has(p.id)).length;
+
+  mount(`
+    <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+      <div>
+        <h2 class="display text-3xl">Team chats</h2>
+        <p class="text-sm text-gray-600 mt-1">${onTeam} of ${(players || []).length} on this team signed in to the portal.
+          Deleted messages stay here (struck out) so you can look back.</p>
+      </div>
+      <select id="ch-team" class="field !w-auto">${(teams || []).map(t =>
+        `<option value="${t.id}" ${t.id === teamId ? 'selected' : ''}>${esc(t.name)} · ${esc(t.division)}</option>`).join('')}</select>
+    </div>
+    <form id="ch-post" class="panel p-3 flex gap-2 mb-4">
+      <input id="ch-text" class="field" maxlength="2000" placeholder="Post to this team as the league office">
+      <button class="btn btn-primary">Post</button>
+    </form>
+    <div class="panel" id="ch-list">
+      ${(msgs || []).length ? msgs.map(m => {
+        const pl = playerBy.get(m.player_id);
+        const gone = !!m.deleted_at;
+        const body = gone ? (removedBy.get(m.id)?.original_body ?? '') : m.body;
+        return `<div class="flex gap-3 items-start px-4 py-3 border-b" style="border-color:var(--line)">
+          <div class="flex-1 min-w-0">
+            <p class="text-xs text-gray-500"><b class="text-[var(--ink)]">${esc(m.author_name)}</b>${pl?.captain ? ' · captain' : ''}
+              · ${fmtDT(m.created_at)} ${m.pinned ? chip('Pinned', 'chip-brass') : ''}
+              ${gone ? chip(`Deleted by ${m.deleted_by || 'someone'}`, 'chip-red') : ''} ${pl?.chat_muted ? chip('Muted', 'chip-grey') : ''}</p>
+            <p class="text-sm mt-1 whitespace-pre-wrap break-words ${gone ? 'line-through text-gray-400' : ''}">${esc(body)}</p>
+          </div>
+          <div class="flex gap-3 text-xs font-semibold whitespace-nowrap">
+            ${!gone ? `<button data-pin="${m.id}" data-on="${m.pinned ? 0 : 1}" style="color:var(--ivy)">${m.pinned ? 'Unpin' : 'Pin'}</button>` : ''}
+            ${pl ? `<button data-mute="${pl.id}" data-on="${pl.chat_muted ? 0 : 1}" class="text-gray-600">${pl.chat_muted ? 'Unmute' : 'Mute'}</button>` : ''}
+            ${!gone ? `<button data-del="${m.id}" class="text-red-700">Delete</button>` : ''}
+          </div>
+        </div>`;
+      }).join('') : '<p class="text-sm text-gray-600 p-4">No messages in this team’s chat yet.</p>'}
+    </div>`);
+
+  document.getElementById('ch-team').onchange = e => go('chats', e.target.value);
+  document.getElementById('ch-post').addEventListener('submit', async e => {
+    e.preventDefault();
+    const body = document.getElementById('ch-text').value.trim(); if (!body) return;
+    const { error } = await sb.rpc('portal_post', { p_team_id: teamId, p_body: body });
+    if (error) return toast('Couldn’t post that.', false);
+    toast('Posted.'); chatsView(teamId);
+  });
+  document.getElementById('ch-list').addEventListener('click', async e => {
+    const d = e.target.closest('[data-del]'), pn = e.target.closest('[data-pin]'), mu = e.target.closest('[data-mute]');
+    let error;
+    if (d) {
+      if (!confirm('Delete this message? Players stop seeing it; you can still read it here.')) return;
+      ({ error } = await sb.rpc('portal_delete_message', { p_id: d.dataset.del }));
+    } else if (pn) ({ error } = await sb.rpc('portal_pin_message', { p_id: pn.dataset.pin, p_pinned: pn.dataset.on === '1' }));
+    else if (mu) ({ error } = await sb.from('players').update({ chat_muted: mu.dataset.on === '1' }).eq('id', mu.dataset.mute));
+    else return;
+    if (error) return toast('Couldn’t do that.', false);
+    chatsView(teamId);
+  });
 }

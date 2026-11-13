@@ -76,7 +76,8 @@ const NAV = [
     ['regs', 'Registrations', () => regsView()],
     ['teams', 'Teams & rosters', () => teamsView()],
     ['susp', 'Suspensions', () => suspView()],
-    ['comms', 'Email lists', () => commsView()]
+    ['comms', 'Email lists', () => commsView()],
+    ['chats', 'Team chats', arg => chatsView(arg)]
   ]],
   ['Game day', [
     ['score', 'Scorekeeping', () => scoreView()],
