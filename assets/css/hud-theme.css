@@ -1,0 +1,137 @@
+/* ===============================================================
+   HUD theme — a quiet, dark take on Conrad's look, site-wide.
+
+   Everything here is scoped to html.hud, so the classic look is
+   untouched unless the theme is switched on. preload.js adds the
+   class when:
+     - the URL has ?theme=hud   (remembered in this browser;
+                                 ?theme=classic switches back), or
+     - site_content "theme.style" is "hud"  (site-wide switch).
+
+   Restraint is the point: deep evergreen surfaces, hairline
+   borders, one soft green accent, and Conrad's glow kept for the
+   few things that are actually live.
+=============================================================== */
+
+html.hud {
+  --paper: #06140D;
+  --ink:   #E4EEE8;
+  --line:  rgba(228, 238, 232, .09);
+  --ice:   rgba(228, 238, 232, .04);
+  --accent: #6FCF9A;                 /* softer than Conrad's glow */
+  --hud-panel: #0B1D14;
+  --hud-muted: rgba(228, 238, 232, .55);
+  --hud-soft:  rgba(228, 238, 232, .75);
+  color-scheme: dark;
+}
+
+html.hud body {
+  background: var(--paper);
+  color: var(--ink);
+}
+html.hud ::selection { background: rgba(111,207,154,.3); color: #fff; }
+
+/* ---- Type ---------------------------------------------------- */
+html.hud .display { color: #F4F8F5; }
+html.hud .rule { color: var(--accent); }
+html.hud .rule::after { background: linear-gradient(90deg, var(--line), transparent); }
+
+/* ---- Hero / header / footer fields --------------------------- */
+html.hud .crest-field {
+  background-color: #081A10;
+  background-image: radial-gradient(80% 120% at 85% 0%, rgba(111,207,154,.08), transparent 60%);
+}
+html.hud #site-header > .crest-field { border-bottom: 1px solid var(--line); }
+html.hud #site-footer > .crest-field { border-top: 1px solid var(--line); background-image: none; }
+html.hud #site-header nav a.bg-white\/15 {
+  background: transparent; color: #fff;
+  box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0;
+}
+
+/* ---- Panels -------------------------------------------------- */
+html.hud .panel,
+html.hud .panel-deep {
+  background: var(--hud-panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+html.hud .panel-deep { background: #0E2418; }
+html.hud #hero-game {
+  background: rgba(6,20,13,.55);
+  border-color: rgba(111,207,154,.22);
+  border-radius: 8px;
+}
+html.hud a.panel:hover { border-color: rgba(111,207,154,.3); background: #0E2219; }
+
+/* ---- Buttons ------------------------------------------------- */
+html.hud .btn { border-radius: 6px; }
+html.hud .btn-primary { background: var(--accent); color: #06140D; }
+html.hud .btn-primary:hover { background: #8FDDB2; color: #06140D; }
+html.hud .btn-brass:hover { background: var(--brass-soft); color: #1B1204; }
+html.hud .btn-ghost { border-color: rgba(228,238,232,.25); }
+html.hud .btn-ghost:hover { background: rgba(228,238,232,.06); }
+html.hud .btn-quiet { border: 1px solid var(--line); color: var(--ink); background: transparent; }
+html.hud .btn-quiet:hover { background: var(--ice); }
+
+/* ---- Forms --------------------------------------------------- */
+html.hud .label { color: var(--hud-muted); }
+html.hud .field { background: #06140D; color: #fff; border-color: rgba(228,238,232,.14); border-radius: 6px; }
+html.hud .field::placeholder { color: rgba(228,238,232,.35); }
+html.hud .field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(111,207,154,.15); outline: 0; }
+html.hud select.field option { background: #0B1D14; color: #fff; }
+html.hud input[type="checkbox"] { accent-color: var(--accent); }
+
+/* ---- Tables -------------------------------------------------- */
+html.hud .grid-table thead th {
+  background: transparent; color: var(--hud-muted);
+  font-weight: 600; letter-spacing: .04em; text-transform: uppercase; font-size: .7rem;
+  border-bottom: 1px solid rgba(228,238,232,.14);
+}
+html.hud .grid-table tbody td { border-bottom-color: var(--line); }
+html.hud .grid-table tbody tr:nth-child(even) { background: transparent; }
+html.hud .grid-table tbody tr:hover { background: var(--ice); }
+
+/* ---- Live: the one place Conrad's glow shows ----------------- */
+html.hud .scoreline { color: #fff; }
+html.hud .pulse-live::before { background: #FF5A45; box-shadow: 0 0 6px rgba(255,90,69,.7); }
+html.hud [style*="background:var(--ivy-deep)"] {
+  background: rgba(228,238,232,.03) !important;
+  border-bottom: 1px solid var(--line);
+}
+html.hud [data-clock] { color: var(--accent) !important; }
+
+/* ---- Remap light-theme colours used in page markup ----------- */
+html.hud [style*="color:var(--ivy)"] { color: var(--accent) !important; }
+html.hud .text-gray-400 { color: rgba(228,238,232,.4); }
+html.hud .text-gray-500 { color: var(--hud-muted); }
+html.hud .text-gray-600 { color: rgba(228,238,232,.65); }
+html.hud .text-\[\#33463C\],
+html.hud .text-\[\#243b30\] { color: var(--hud-soft); }
+html.hud .text-red-600,
+html.hud .text-red-700 { color: #FF8A78; }
+html.hud .border,
+html.hud .border-t,
+html.hud .border-b { border-color: var(--line); }
+html.hud .underline { text-decoration-color: rgba(111,207,154,.4); }
+
+/* ---- League office (admin/) ---------------------------------- */
+html.hud .office-side { border-right: 1px solid var(--line); }
+html.hud .office-search { background: rgba(228,238,232,.06); border-color: rgba(228,238,232,.14); border-radius: 6px; }
+html.hud .office-search:focus { border-color: var(--accent); background: rgba(228,238,232,.09); }
+html.hud .office-nav button { border-radius: 6px; }
+html.hud .office-nav button.on { background: rgba(228,238,232,.08); box-shadow: inset 3px 0 0 var(--accent); }
+html.hud .office-me { border-top-color: var(--line); }
+html.hud .stat { background: var(--hud-panel); border-color: var(--line); border-radius: 8px; }
+html.hud button.stat:hover { border-color: rgba(111,207,154,.3); }
+html.hud .stat .n { color: #F4F8F5; }
+html.hud .stat .l, html.hud .kv dt { color: var(--hud-muted); }
+html.hud .stat.warn .n { color: var(--brass-soft); }
+html.hud .stat.bad .n { color: #FF8A78; }
+html.hud .chip-ivy   { background: rgba(111,207,154,.14); color: var(--accent); }
+html.hud .chip-brass { background: rgba(192,138,43,.18);  color: var(--brass-soft); }
+html.hud .chip-red   { background: rgba(255,138,120,.14); color: #FF8A78; }
+html.hud .chip-grey  { background: rgba(228,238,232,.08); color: var(--hud-soft); }
+html.hud .text-red-800 { color: #FF8A78; }
+html.hud textarea.field, html.hud input[type="date"].field, html.hud input[type="datetime-local"].field, html.hud input[type="time"].field { color-scheme: dark; }
+html.hud .field.\!text-black { color: #fff !important; }

@@ -18,13 +18,15 @@ let me = null, view = 'home', tick = null;
 let sheetKeys = null;
 document.addEventListener('keydown', e => sheetKeys && sheetKeys(e));
 
+/* ok: true (green), false (red), or 'warn' (brass, stays up longer) */
 function toast(text, ok = true) {
+  const warn = ok === 'warn';
   const t = document.createElement('div');
-  t.className = 'fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded text-sm text-white shadow-lg';
-  t.style.background = ok ? 'var(--ivy)' : '#B3261E';
+  t.className = 'fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded text-sm text-white shadow-lg max-w-[min(36rem,calc(100vw-2rem))]' + (warn ? ' toast-warn' : '');
+  t.style.background = warn ? '#8A5F12' : ok ? 'var(--ivy)' : '#B3261E';
   t.textContent = text;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2600);
+  setTimeout(() => t.remove(), warn ? 9000 : 2600);
 }
 
 /* ================= auth ================= */
@@ -1098,13 +1100,98 @@ async function pagesView() {
 
   document.getElementById('upload').onclick = () => document.getElementById('file').click();
   document.getElementById('file').onchange = async e => {
-    const file = e.target.files[0]; if (!file) return;
-    const path = `${Date.now()}-${file.name.replace(/[^\w.\-]/g, '_')}`;
-    const { error } = await sb.storage.from('media').upload(path, file, { upsert: true });
-    if (error) return toast('Upload failed — check the media bucket exists.', false);
-    const { data } = sb.storage.from('media').getPublicUrl(path);
-    prompt('Image uploaded. Copy this URL:', data.publicUrl);
+    const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+    const url = await uploadMedia(file);
+    if (url) prompt('Image uploaded. Copy this URL:', url);
   };
+}
+
+/* ================= 5a-bis. Image uploads ======================
+   Phone photos go up at full quality, but anything bigger than the
+   biggest screen it will be shown on is scaled down first (with
+   high-quality smoothing) so pages load fast and browsers don't do
+   a rough downscale on the fly. Sideways EXIF photos get turned the
+   right way up. Photos that are too small to look sharp get a
+   warning, because that's what makes them look grainy on the site.
+----------------------------------------------------------------*/
+const IMG_MAX_EDGE = 2400;   // longest side we ever need to serve
+const IMG_MIN_SHARP = 1200;  // below this, photos look soft on desktops
+
+async function decodeImage(file) {
+  if ('createImageBitmap' in window) {
+    try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch { /* fall through */ }
+  }
+  const src = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    return img;
+  } finally { URL.revokeObjectURL(src); }
+}
+
+/* Halve repeatedly, then do the last step: much cleaner than one
+   big jump from 4000px to 2400px. */
+function scaleDown(source, w, h) {
+  let cur = source, cw = source.width, ch = source.height;
+  while (cw / 2 >= w && ch / 2 >= h) {
+    const c = document.createElement('canvas');
+    c.width = Math.round(cw / 2); c.height = Math.round(ch / 2);
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(cur, 0, 0, c.width, c.height);
+    cur = c; cw = c.width; ch = c.height;
+  }
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const ctx = out.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(cur, 0, 0, w, h);
+  return out;
+}
+
+async function prepareImage(file) {
+  // Animated GIFs and SVGs can't go through a canvas without breaking.
+  if (/image\/(gif|svg)/.test(file.type)) return { blob: file, name: file.name };
+
+  let bmp;
+  try { bmp = await decodeImage(file); } catch { bmp = null; }
+  if (!bmp) {
+    toast(/hei[cf]/i.test(file.type + file.name)
+      ? "That's an iPhone HEIC photo, which most browsers can't show. Export it as JPEG (or set Camera → Formats → Most Compatible) and try again."
+      : "That file doesn't look like a photo a browser can show. Try a JPEG or PNG.", false);
+    return null;
+  }
+
+  const w = bmp.width, h = bmp.height, long = Math.max(w, h);
+  // Already a sensible size: upload the original untouched, so we
+  // never re-compress a photo that doesn't need it. (Browsers honour
+  // the phone's rotation tag on their own.)
+  if (long <= IMG_MAX_EDGE && file.size < 4e6) return { blob: file, name: file.name, width: w, height: h };
+
+  const scale = Math.min(1, IMG_MAX_EDGE / long);
+  const tw = Math.round(w * scale), th = Math.round(h * scale);
+  const canvas = scaleDown(bmp, tw, th);
+  const keepPng = /png|webp/i.test(file.type);   // logos with see-through backgrounds
+  const blob = await new Promise(r => canvas.toBlob(r, keepPng ? 'image/png' : 'image/jpeg', 0.9));
+  if (!blob) return { blob: file, name: file.name, width: w, height: h };
+  return { blob, width: tw, height: th, name: file.name.replace(/\.[^.]+$/, '') + (keepPng ? '.png' : '.jpg') };
+}
+
+/* Returns the public URL, or null (and shows why) on failure. */
+async function uploadMedia(file) {
+  const img = await prepareImage(file);
+  if (!img) return null;
+  const path = `${Date.now()}-${img.name.replace(/[^\w.\-]/g, '_')}`;
+  const { error } = await sb.storage.from('media').upload(path, img.blob, {
+    upsert: true, contentType: img.blob.type || file.type, cacheControl: '31536000'
+  });
+  if (error) { toast('Upload failed — check the media bucket exists.', false); return null; }
+  if (img.width && Math.max(img.width, img.height) < IMG_MIN_SHARP) {
+    toast(`Uploaded, but this photo is only ${img.width}×${img.height}, so it will look soft on the site. ` +
+      'Use the original from the phone or camera if you can, not a screenshot or one saved from Facebook or a group chat.', 'warn');
+  }
+  return sb.storage.from('media').getPublicUrl(path).data.publicUrl;
 }
 
 /* ================= 5b. Photos (section image galleries) ======== */
@@ -1115,7 +1202,8 @@ async function photosView() {
   mount(`
     <h2 class="display text-2xl mb-1">Photos</h2>
     <p class="text-sm text-gray-600 mb-5 max-w-2xl">Add photos to a section of the site, then use the arrows to reorder them.
-      "home" is the photo strip near the bottom of the home page.</p>
+      "home" is the photo strip near the bottom of the home page. Photos show uncropped, so tall and wide shots both work.
+      For sharp results, upload the original from the phone (at least ${IMG_MIN_SHARP}px on the long side), not a screenshot.</p>
 
     <div class="panel p-5 mb-6 max-w-3xl">
       <div class="rule mb-3">Add a photo</div>
@@ -1135,8 +1223,11 @@ async function photosView() {
         <div class="grid gap-2">
           ${imgs.filter(g => g.section === sec).map((g, i, arr) => `
             <div class="panel p-3 flex items-center gap-3" data-photo="${g.id}">
-              <img src="${esc(g.url)}" alt="" class="h-14 w-20 object-cover rounded">
-              <span class="text-xs text-gray-500 flex-1 truncate">${esc(g.alt || g.url)}</span>
+              <img src="${esc(g.url)}" alt="" class="h-14 w-20 object-cover rounded" data-res-img>
+              <span class="flex-1 min-w-0">
+                <span class="block text-xs text-gray-500 truncate">${esc(g.alt || g.url)}</span>
+                <span class="block text-[11px] mt-0.5" data-res></span>
+              </span>
               <button data-move="-1" class="btn btn-quiet !px-2 !py-1 !text-xs" ${i === 0 ? 'disabled' : ''}>↑</button>
               <button data-move="1" class="btn btn-quiet !px-2 !py-1 !text-xs" ${i === arr.length - 1 ? 'disabled' : ''}>↓</button>
               <button data-delg="${g.id}" class="text-xs text-red-700 hover:underline">Remove</button>
@@ -1144,15 +1235,29 @@ async function photosView() {
         </div>
       </div>`).join('') : '<p class="text-sm text-gray-500 max-w-3xl">No photos yet — add one above.</p>'}`);
 
+  /* Flag photos too small to look sharp: the usual cause of "grainy". */
+  document.querySelectorAll('[data-res-img]').forEach(img => {
+    const show = () => {
+      const label = img.closest('[data-photo]').querySelector('[data-res]');
+      const w = img.naturalWidth, h = img.naturalHeight;
+      if (!w) return;
+      const low = Math.max(w, h) < IMG_MIN_SHARP;
+      label.textContent = `${w}×${h}` + (low ? ' · low resolution, will look grainy. Re-upload the original.' : '');
+      label.style.color = low ? '#8A5F12' : '#6B7A71';
+    };
+    img.complete ? show() : img.addEventListener('load', show);
+  });
+
   document.getElementById('g-upload').onclick = () => document.getElementById('g-file').click();
   document.getElementById('g-file').onchange = async e => {
-    const file = e.target.files[0]; if (!file) return;
-    const path = `${Date.now()}-${file.name.replace(/[^\w.\-]/g, '_')}`;
-    const { error } = await sb.storage.from('media').upload(path, file, { upsert: true });
-    if (error) return toast('Upload failed — check the media bucket exists.', false);
-    const { data } = sb.storage.from('media').getPublicUrl(path);
-    document.getElementById('g-url').value = data.publicUrl;
-    toast('Uploaded — click "Add photo" to place it.');
+    const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+    const btn = document.getElementById('g-upload');
+    btn.disabled = true; btn.textContent = 'Uploading…';
+    const url = await uploadMedia(file);
+    btn.disabled = false; btn.textContent = 'Upload image';
+    if (!url) return;
+    document.getElementById('g-url').value = url;
+    if (!document.querySelector('.toast-warn')) toast('Uploaded — click "Add photo" to place it.');
   };
 
   document.getElementById('add-photo').onclick = async () => {
@@ -1410,7 +1515,7 @@ async function payViewInner() {
 async function checkOptionsWithStripe() {
   const cells = document.querySelectorAll('[data-stripe-state]');
   if (!cells.length) return;
-  cells.forEach(c => { c.textContent = 'Checking with Stripe…'; c.style.color = '#6B7280'; });
+  cells.forEach(c => { c.textContent = 'Checking with Stripe…'; c.className = 'md:col-span-2 text-xs text-gray-500'; });
   let out = null;
   try {
     const { data: { session } } = await sb.auth.getSession();
@@ -1427,7 +1532,8 @@ async function checkOptionsWithStripe() {
     if (!out) { c.textContent = 'Couldn’t check with Stripe (the Stripe function isn’t set up yet, see STRIPE-SETUP.md).'; return; }
     if (!o) return;
     const shown = o.active && o.stripe_ok;
-    c.style.color = shown ? 'var(--ivy)' : '#B3261E';
+    c.className = `md:col-span-2 text-xs ${shown ? 'font-semibold' : 'text-red-700'}`;
+    c.style.color = shown ? 'var(--accent, var(--ivy))' : '';
     c.textContent = shown ? '● Showing on the registration page: active here and in Stripe.'
       : !o.active ? `○ Hidden: "Active on the site" is off.${o.stripe_ok ? '' : ' ' + o.stripe_reason}`
       : `○ Hidden from the site: ${o.stripe_reason}`;

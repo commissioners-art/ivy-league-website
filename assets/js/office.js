@@ -328,7 +328,7 @@ function syncReport() {
   if (!lastSync) return '';
   const u = lastSync.unmatched || [];
   return `
-    <div id="sync-report" class="panel p-5 mb-5" style="border-color:${u.length ? 'var(--brass)' : 'var(--ivy)'}">
+    <div id="sync-report" class="panel p-5 mb-5" ${u.length ? 'style="border-color:var(--brass)"' : ''}>
       <div class="flex justify-between gap-3 mb-2">
         <p class="font-semibold text-sm">Stripe sync: ${lastSync.matched} registration${lastSync.matched === 1 ? '' : 's'} up to date.
           ${u.length ? `${u.length} Stripe payment${u.length === 1 ? '' : 's'} didn’t match anyone.` : 'Every Stripe payment matched a registration.'}</p>

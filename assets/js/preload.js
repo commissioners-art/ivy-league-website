@@ -16,6 +16,15 @@
   var VARS = { 'theme.ivy': '--ivy', 'theme.ivy_deep': '--ivy-deep', 'theme.brass': '--brass', 'theme.sprig': '--ivy-sprig' };
   if (cached) for (var k in VARS) if (cached[k]) root.style.setProperty(VARS[k], cached[k]);
 
+  // Dark theme (assets/css/hud-theme.css) is the site's look. It is loaded
+  // from here so every page that runs preload.js picks it up. Setting
+  // site_content "theme.style" to "classic" turns it off for everyone.
+  if (!(cached && cached['theme.style'] === 'classic')) {
+    root.classList.add('hud');
+    var v = (document.currentScript && document.currentScript.src.split('?')[1]) || '';
+    document.write('<link rel="stylesheet" href="assets/css/hud-theme.css' + (v ? '?' + v : '') + '">');
+  }
+
   root.classList.add('cms-loading');
   // No saved copy yet (first visit, or after the browser cleared it): the
   // custom colours aren't known either, so hold the whole page back

@@ -268,7 +268,44 @@ body {
 .rise-3 { animation-delay: .2s; }
 @keyframes rise { to { opacity: 1; transform: none; } }
 
+/* ---- Photos ------------------------------------------------- */
+/* Gallery: masonry columns so each photo keeps its own shape. */
+.photo-wall { columns: 1; column-gap: 1rem; }
+@media (min-width: 640px)  { .photo-wall { columns: 2; } }
+@media (min-width: 1024px) { .photo-wall { columns: 3; } }
+.photo-wall-item {
+  display: block; margin-bottom: 1rem; break-inside: avoid;
+  border-radius: 6px; overflow: hidden; background: var(--ice);
+  cursor: zoom-in;
+}
+.photo-wall-item img { display: block; width: 100%; height: auto; transition: transform .3s ease; }
+.photo-wall-item:hover img { transform: scale(1.02); }
+
+/* A fixed-shape frame (news cards) that shows the WHOLE photo,
+   filling any leftover space with a soft blurred copy of itself. */
+.photo-frame { position: relative; overflow: hidden; background: var(--ice); }
+.photo-frame .photo-frame-bg {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; filter: blur(18px) saturate(1.1); transform: scale(1.15); opacity: .55;
+}
+.photo-frame .photo-frame-fg { position: relative; width: 100%; height: 100%; object-fit: contain; }
+
+/* Article / page photo: full photo, never cropped. */
+.photo-full { display: block; max-width: 100%; height: auto; max-height: 40rem; margin: 0 auto 2rem; border-radius: 6px; }
+
+.lightbox {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  padding: 1rem; background: rgba(5, 20, 12, .92); cursor: zoom-out;
+}
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; cursor: default; }
+.lightbox button {
+  position: absolute; top: .75rem; right: 1rem; color: #fff; font-size: 2.25rem; line-height: 1;
+  width: 2.75rem; height: 2.75rem;
+}
+
 /* Registration: payment option cards (radio inside) */
 .pay-opt { transition: border-color .15s, box-shadow .15s; }
 .pay-opt:has(input:checked) { border-color: var(--ivy); box-shadow: 0 0 0 2px var(--ivy) inset; }
 .pay-opt input { accent-color: var(--ivy); }
+html.hud .pay-opt:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+html.hud .pay-opt input { accent-color: var(--accent); }
